@@ -1,0 +1,75 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Devanagari:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — kiosk.eko.in palette, MIRA-tuned surfaces */
+:root {
+  --background: 200 24% 96%;
+  --surface: 40 20% 99%;
+  --foreground: 210 30% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 30% 12%;
+  --primary: 197 100% 40%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 197 100% 26%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 200 20% 94%;
+  --muted-foreground: 210 12% 42%;
+  --accent: 155 53% 26%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 205 20% 88%;
+  --input: 205 20% 86%;
+  --ring: 197 100% 40%;
+  --radius: 0.875rem;
+  --saffron: 42 85% 55%;
+
+  --shadow-sm: 0 1px 2px hsl(210 30% 12% / 0.04), 0 1px 3px hsl(210 30% 12% / 0.06);
+  --shadow-md: 0 4px 6px -2px hsl(210 30% 12% / 0.05),
+    0 12px 20px -6px hsl(210 30% 12% / 0.1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "Inter", "IBM Plex Sans Devanagari", "Segoe UI", system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Plus Jakarta Sans", "IBM Plex Sans Devanagari", "Inter",
+    system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.18);
+}
+
+/* thin, unobtrusive scrollbars for the app chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
