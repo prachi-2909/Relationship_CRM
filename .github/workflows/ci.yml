@@ -18,10 +18,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: alembic upgrade head
+      - run: python -m alembic upgrade head
         env:
           DATABASE_URL: sqlite+pysqlite:///./ci.db
-      - run: pytest -q
+      - run: python -m pytest -q
 
   frontend:
     runs-on: ubuntu-latest
