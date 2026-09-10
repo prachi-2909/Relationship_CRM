@@ -57,12 +57,24 @@ There is no send path anywhere in the system. A moment never advances past
 `draft_ready` on its own. `approved` / `sent_manually` / `dismissed` are all
 explicit human actions, and "sent" only records that a person sent it by hand.
 
+## Stakeholder graph
+
+Edges between officials (`reports_to` / `works_with` / `introduced_by`). Manual
+edges (`POST /api/v1/connections`, admin/RM) land `confirmed`. When an
+interaction is logged, officials named in it are proposed as `suggested`
+`works_with` edges; a human confirms or dismisses them per official
+(`PATCH /api/v1/connections/{id}`). `POST /api/v1/officials/{id}/connections/rescan`
+re-runs the suggestion pass over that official's interactions — use it to
+backfill data loaded before the feature existed. Only `confirmed` edges appear
+in the Relationship Brief.
+
 ## Tuning (all in `.env`, restart to apply)
 
 | Variable | Default | Effect |
 |---|---|---|
 | `SESSION_TTL_HOURS` | 8 | login session lifetime |
-| `LLM_BASE_URL` / `LLM_MODEL` | (unset) → offline stub | interaction extraction endpoint |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | (unset) → offline stub | OpenAI-compatible endpoint for interaction extraction and the Relationship Brief narrative |
+| `LLM_TIMEOUT_SECONDS` | 30 | per-call timeout; raise for slow local models |
 | `MOMENT_LOOKAHEAD_DAYS` | 7 | how far ahead birthdays / anniversaries are surfaced |
 | `MOMENT_INACTIVITY_DAYS` | 35 | silence before an inactivity moment |
 | `MOMENT_FATIGUE_DAYS` | 21 | recent-contact window that suppresses a moment |

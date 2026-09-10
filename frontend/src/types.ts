@@ -184,6 +184,92 @@ export interface ScoreHistoryEntry {
   computed_at: string;
 }
 
+export interface RelationshipBrief {
+  relationship_id: number;
+  official_name: string;
+  official_level: string | null;
+  unit: string | null;
+  owner_id: number | null;
+  status: string;
+  importance: Importance;
+  score: number;
+  band: string;
+  days_since_last_contact: number | null;
+  narrative: string;
+  generated_by: string;
+  what_is_important: string;
+  what_changed: string[];
+  reconnect_opportunity: { yes: boolean; reason: string };
+  next_interaction: string;
+  stakeholders: {
+    available: boolean;
+    note: string;
+    connections: {
+      official_id: number;
+      name: string;
+      level: string | null;
+      type: ConnectionType;
+      direction: ConnectionDirection;
+      label: string;
+      note: string | null;
+    }[];
+    suggested_count: number;
+    mentioned: string[];
+  };
+  open_followups: { title: string; due_at: string | null; overdue: boolean }[];
+  recent_commitments: string[];
+  open_moments: {
+    type: string;
+    status: string;
+    trigger: string | null;
+    suppressed: boolean;
+  }[];
+  upcoming_dates: { kind: string; date: string; in_days: number }[];
+  recent_interactions: {
+    occurred_at: string;
+    type: string;
+    direction: string;
+    sentiment: string;
+    summary: string;
+  }[];
+}
+
+// --- connections (stakeholder graph) --------------------------------
+export type ConnectionType = "reports_to" | "works_with" | "introduced_by";
+export type ConnectionStatus = "suggested" | "confirmed" | "dismissed";
+export type ConnectionDirection = "outgoing" | "incoming" | "mutual";
+
+export const CONNECTION_TYPES: ConnectionType[] = [
+  "reports_to",
+  "works_with",
+  "introduced_by",
+];
+
+export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
+  reports_to: "Reports to",
+  works_with: "Works with",
+  introduced_by: "Introduced by",
+};
+
+export interface Neighbor {
+  connection_id: number;
+  official_id: number;
+  name: string;
+  level: string | null;
+  type: ConnectionType;
+  direction: ConnectionDirection;
+  status: ConnectionStatus;
+  label: string;
+  note: string | null;
+  source: string;
+}
+
+export interface OfficialGraph {
+  official_id: number;
+  confirmed: Neighbor[];
+  suggested: Neighbor[];
+}
+
 export const SCORE_BANDS: { min: number; label: string; risk: RiskLevel }[] = [
   { min: 80, label: "Strong", risk: "low" },
   { min: 60, label: "Healthy", risk: "low" },

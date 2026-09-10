@@ -56,6 +56,37 @@ def test_set_field_then_admin_verify_rolls_up(client, make_user, login):
     assert verified["verification_status"] == "verified"
 
 
+def test_admin_manual_entry_is_verified_on_create(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    resp = client.post(
+        "/api/v1/officials",
+        json={
+            "name": "Ravi Menon",
+            "designation": "Regional Manager",
+            "level": "AGM",
+            "location": "Mumbai",
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["verification_status"] == "verified"
+    for field in ("designation", "level", "location"):
+        assert body["fields"][field]["source"] == "Manual entry"
+        assert body["fields"][field]["verification_status"] == "verified"
+    # a field left blank has no provenance row
+    assert "department" not in body["fields"]
+
+
+def test_manager_manual_entry_waits_for_review(client, make_user, login):
+    _as(make_user, login, Role.RELATIONSHIP_MANAGER, "rm@example.com")
+    body = client.post(
+        "/api/v1/officials", json={"name": "B Singh", "level": "DGM"}
+    ).json()
+    assert body["verification_status"] == "unverified"
+    assert body["fields"]["level"]["source"] == "Manual entry"
+    assert body["fields"]["level"]["verification_status"] == "unverified"
+
+
 def test_relationship_manager_cannot_verify(client, make_user, login):
     make_user(email="admin@example.com", password="secret123", role=Role.ADMIN)
     make_user(email="rm@example.com", password="secret123", role=Role.RELATIONSHIP_MANAGER)

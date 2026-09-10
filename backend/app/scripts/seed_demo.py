@@ -22,6 +22,8 @@ from ..models.relationship import Importance, Relationship, RelationshipStatus
 from ..models.task import Task, TaskStatus
 from ..models.user import Role, User, UserStatus
 from ..security.passwords import hash_password
+from ..models.connection import ConnectionStatus, ConnectionType
+from ..services import connections as connections_svc
 from ..services import moments, scoring
 from ..services.llm import extract_interaction
 from .seed_unit_types import ensure_defaults
@@ -80,6 +82,40 @@ TASKS = [
     ("Manager (Partnerships), Zone 5", "Confirm the Salt Lake login issue is closed", -5, "done"),
     ("AGM, Regional Office — East", "Draft the Zone 2/7 expansion note", 10, "open"),
     ("Deputy GM (Operations), Head Office", "Follow up on the monthly summary", 2, "open"),
+]
+
+# stakeholder graph: (from role, type, to role, note)
+CONNECTIONS = [
+    (
+        "Manager (Partnerships), Zone 5",
+        "reports_to",
+        "Chief Manager, Zone 5",
+        "Zone 5 partnerships line",
+    ),
+    (
+        "Chief Manager, Zone 5",
+        "reports_to",
+        "AGM, Regional Office — East",
+        None,
+    ),
+    (
+        "Deputy GM (Operations), Head Office",
+        "works_with",
+        "Chief Manager (Partnerships), Head Office",
+        "co-own the HO partnership desk",
+    ),
+    (
+        "Chief Manager (Partnerships), Head Office",
+        "introduced_by",
+        "AGM, Regional Office — East",
+        "brought in during the Zone 5 review",
+    ),
+    (
+        "Manager (Partnerships), Zone 5",
+        "works_with",
+        "Branch Manager, Barasat Branch",
+        None,
+    ),
 ]
 
 # (official role, type, direction, days ago, note)
@@ -203,11 +239,9 @@ def seed(db: Session) -> None:
 
     relationships: dict[str, Relationship] = {}
     for role_name, official in officials.items():
-        strategic = official.level in ("DGM", "Chief Manager", "AGM")
         rel = Relationship(
             official_id=official.id,
             owner_id=admin.id,
-            importance=Importance.STRATEGIC if strategic else Importance.IMPORTANT,
             status=RelationshipStatus.ACTIVE,
         )
         db.add(rel)
@@ -297,7 +331,24 @@ def seed(db: Session) -> None:
         )
     db.flush()
 
+    for from_role, ctype, to_role, note in CONNECTIONS:
+        connections_svc.upsert(
+            db,
+            from_id=officials[from_role].id,
+            to_id=officials[to_role].id,
+            type_=ConnectionType(ctype),
+            source="Manual entry (demo)",
+            status=ConnectionStatus.CONFIRMED,
+            actor_id=admin.id,
+            note=note,
+            confidence=100,
+        )
+    db.flush()
+
+    from ..services.importance import recompute as recompute_importance
+
     for rel in relationships.values():
+        recompute_importance(db, rel)
         scoring.recompute_and_store(db, rel, reason="seed")
 
     n_moments = moments.detect_all(db)
@@ -305,7 +356,8 @@ def seed(db: Session) -> None:
     print(
         f"  seeded {len(units)} units, {len(officials)} officials, "
         f"{len(relationships)} relationships, {len(INTERACTIONS)} interactions, "
-        f"{len(TASKS)} tasks, {len(seed_dates)} dates, {n_moments} moments"
+        f"{len(TASKS)} tasks, {len(seed_dates)} dates, {len(CONNECTIONS)} connections, "
+        f"{n_moments} moments"
     )
 
 

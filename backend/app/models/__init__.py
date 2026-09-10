@@ -2,6 +2,7 @@
 
 from .audit import AuditLog
 from .base import Base, TimestampMixin
+from .connection import Connection, ConnectionStatus, ConnectionType
 from .data_import import DataImport, ImportRow, ImportStatus, RowAction
 from .engagement_moment import EngagementMoment, MomentStatus, MomentType
 from .interaction import Direction, Interaction, InteractionType, Sentiment
@@ -64,4 +65,7 @@ __all__ = [
     "EngagementMoment",
     "MomentType",
     "MomentStatus",
+    "Connection",
+    "ConnectionType",
+    "ConnectionStatus",
 ]

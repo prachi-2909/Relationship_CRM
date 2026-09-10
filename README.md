@@ -27,13 +27,21 @@ full scope. No autonomous agent, memory store, or learning layer in this phase.
   detection from verified dates, a "Why now?" evidence panel, communication-
   fatigue suppression, a template draft, and approve / send-by-hand / dismiss.
   **Draft-only — there is no send path.** `ENABLE_MOMENTS=false` is the kill switch.
-- Executive dashboard, audit-log viewer, ~66 tests
+- Executive dashboard, audit-log viewer
 
 - **Email ingestion** — paste a raw email or `.eml` body; headers (from / date /
   subject) are parsed, quoted history is collapsed, and the sender is matched to
   an official. Flows into the interaction log via the normal create path.
+- **Relationship Brief** — `GET /relationships/{id}/brief`, a read-only synthesis
+  of one relationship (what matters, what changed, whether to reconnect, the next
+  interaction, the stakeholders). Prose via the configured LLM, deterministic
+  template otherwise. No writes.
+- **Stakeholder graph** — typed edges between officials (`reports_to` /
+  `works_with` / `introduced_by`). Asserted manually or *suggested* from
+  officials co-mentioned in one interaction, then confirmed or dismissed by a
+  human. Surfaced read-only in the Brief.
 - **UI** — grouped sidebar, Eko Kiosk branding, IBM Plex Sans Devanagari for
-  Hindi, shared components, ~70 backend tests
+  Hindi, shared components, ~86 backend tests
 
 See `docs/phase-1-spec.html` for scope and `docs/RUNBOOK.md` for operations.
 Phase 2 (opportunities, RAG, agent, learning) is not started.

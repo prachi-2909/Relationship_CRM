@@ -1,5 +1,5 @@
 from app.models.interaction import Sentiment
-from app.services.llm import extract_interaction
+from app.services.llm import _json_blob, extract_interaction
 
 
 def test_stub_detects_positive_sentiment_and_summary():
@@ -35,3 +35,14 @@ def test_empty_text_is_safe():
     result = extract_interaction("   ", interaction_type="note")
     assert result.sentiment == Sentiment.UNKNOWN
     assert result.summary == ""
+
+
+def test_json_blob_unwraps_fenced_and_preambled_model_output():
+    # bare object
+    assert _json_blob('{"a": 1}') == '{"a": 1}'
+    # ```json fenced (common from small Ollama models)
+    assert _json_blob('```json\n{"a": 1}\n```') == '{"a": 1}'
+    # a line of preamble before the object
+    assert _json_blob('Here is the JSON:\n{"a": 1}') == '{"a": 1}'
+    # trailing commentary after the object
+    assert _json_blob('{"a": 1}\nHope that helps!') == '{"a": 1}'

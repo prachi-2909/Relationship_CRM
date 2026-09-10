@@ -7,6 +7,10 @@ unlike shared in-memory) unless TEST_DATABASE_URL points elsewhere.
 import os
 
 os.environ.setdefault("ENABLE_SCHEDULER", "false")
+# Tests must be deterministic and offline: force the LLM stub even when a real
+# endpoint is configured in .env (env vars outrank the .env file in pydantic).
+os.environ["LLM_BASE_URL"] = ""
+os.environ["LLM_MODEL"] = "stub"
 
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402

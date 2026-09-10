@@ -206,14 +206,22 @@ function NewOfficialForm({
   onSubmit: (body: Record<string, unknown>) => void;
 }) {
   const [name, setName] = useState("");
+  const [designation, setDesignation] = useState("");
   const [level, setLevel] = useState("");
+  const [department, setDepartment] = useState("");
+  const [location, setLocation] = useState("");
+  const [email, setEmail] = useState("");
   const [unitId, setUnitId] = useState("");
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     onSubmit({
       name,
+      designation: designation || null,
       level: level || null,
+      department: department || null,
+      location: location || null,
+      email: email || null,
       organization_unit_id: unitId ? Number(unitId) : null,
     });
   };
@@ -236,11 +244,44 @@ function NewOfficialForm({
         />
       </label>
       <label className="text-sm">
+        <span className="mb-1 block font-medium text-foreground">Designation</span>
+        <input
+          className={input}
+          value={designation}
+          onChange={(e) => setDesignation(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Level</span>
         <input
           className={input}
           value={level}
           onChange={(e) => setLevel(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block font-medium text-foreground">Department</span>
+        <input
+          className={input}
+          value={department}
+          onChange={(e) => setDepartment(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block font-medium text-foreground">Location</span>
+        <input
+          className={input}
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block font-medium text-foreground">Email</span>
+        <input
+          className={input}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
         />
       </label>
       <label className="text-sm">
@@ -262,6 +303,10 @@ function NewOfficialForm({
         {error instanceof ApiError && (
           <p className="mb-2 text-sm text-destructive">{error.message}</p>
         )}
+        <p className="mb-2 text-xs text-muted-foreground">
+          Fields you fill in are recorded with a “Manual entry” source. As an
+          admin they’re marked verified straight away.
+        </p>
         <button
           type="submit"
           disabled={pending}

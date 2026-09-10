@@ -10,12 +10,11 @@ from ..models.relationship import Importance, RelationshipStatus, RiskLevel
 class RelationshipCreate(BaseModel):
     official_id: int
     owner_id: int | None = None
-    importance: Importance | None = None
 
 
 class RelationshipUpdate(BaseModel):
+    # importance is derived (level + engagement sentiment); it is not set here
     status: RelationshipStatus | None = None
-    importance: Importance | None = None
     owner_id: int | None = None
     next_action_at: datetime | None = None
 

@@ -23,9 +23,11 @@ from ...schemas.relationship import (
     RelationshipUpdate,
     ScoreHistoryEntry,
 )
+from ...schemas.brief import RelationshipBrief
 from ...security.deps import get_current_user, require_roles
-from ...services import audit
-from ...services import scoring
+from ...services import audit, scoring
+from ...services import brief as brief_svc
+from ...services.importance import recompute as recompute_importance
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 
@@ -36,17 +38,6 @@ _SORTABLE = {
     "updated_at": Relationship.updated_at,
     "-updated_at": Relationship.updated_at.desc(),
 }
-_STRATEGIC_HINTS = ("cgm", "dgm", "gm ", "general manager", "chief general")
-_IMPORTANT_HINTS = ("agm", "regional manager", "chief manager", "dgm")
-
-
-def _default_importance(official: Official) -> Importance:
-    level = f" {(official.level or '').lower()} "
-    if any(h in level for h in _STRATEGIC_HINTS):
-        return Importance.STRATEGIC
-    if any(h in level for h in _IMPORTANT_HINTS):
-        return Importance.IMPORTANT
-    return Importance.ROUTINE
 
 
 def _latest_components(db: Session, rel: Relationship) -> dict | None:
@@ -156,11 +147,11 @@ def create_relationship(
     rel = Relationship(
         official_id=payload.official_id,
         owner_id=owner_id,
-        importance=payload.importance or _default_importance(official),
         status=RelationshipStatus.NEW,
     )
     db.add(rel)
     db.flush()
+    recompute_importance(db, rel)
     scoring.recompute_and_store(db, rel, reason="created")
     audit.record(
         db,
@@ -204,12 +195,9 @@ def update_relationship(
     if data.get("owner_id") is not None and db.get(User, data["owner_id"]) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Owner not found")
 
-    before = {
-        "status": rel.status.value,
-        "importance": rel.importance.value,
-        "owner_id": rel.owner_id,
-    }
-    for key in ("status", "importance", "owner_id", "next_action_at"):
+    before = {"status": rel.status.value, "owner_id": rel.owner_id}
+    # importance is derived (level + engagement sentiment) — not editable here
+    for key in ("status", "owner_id", "next_action_at"):
         if key in data:
             setattr(rel, key, data[key])
 
@@ -220,11 +208,7 @@ def update_relationship(
         entity_id=rel.id,
         actor_id=actor.id,
         before=before,
-        after={
-            "status": rel.status.value,
-            "importance": rel.importance.value,
-            "owner_id": rel.owner_id,
-        },
+        after={"status": rel.status.value, "owner_id": rel.owner_id},
     )
     db.commit()
     db.refresh(rel)
@@ -273,6 +257,19 @@ def score_history(
     return [ScoreHistoryEntry.model_validate(r) for r in rows]
 
 
+@router.get("/{relationship_id}/brief", response_model=RelationshipBrief)
+def relationship_brief(
+    relationship_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """A read-only synthesis of the relationship: what matters, what changed,
+    whether there's an opening to reconnect, and what the next interaction
+    should be. Assembled from data already in the system; nothing is written."""
+    rel = _load(db, relationship_id)
+    return brief_svc.build(db, rel)
+
+
 @router.post("/{relationship_id}/recompute", response_model=RelationshipDetail)
 def recompute(
     relationship_id: int,
@@ -280,6 +277,7 @@ def recompute(
     actor: User = Depends(_EDITORS),
 ):
     rel = _load(db, relationship_id)
+    recompute_importance(db, rel)
     scoring.recompute_and_store(db, rel, reason="manual recompute")
     audit.record(
         db,
@@ -287,7 +285,7 @@ def recompute(
         entity_type="relationship",
         entity_id=rel.id,
         actor_id=actor.id,
-        after={"score": rel.score},
+        after={"score": rel.score, "importance": rel.importance.value},
     )
     db.commit()
     db.refresh(rel)

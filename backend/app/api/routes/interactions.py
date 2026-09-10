@@ -22,6 +22,8 @@ from ...schemas.interaction import (
 )
 from ...security.deps import get_current_user, require_roles
 from ...services import audit, scoring
+from ...services import connections as connections_svc
+from ...services.importance import recompute as recompute_importance
 from ...services.email_parse import parse_email
 from ...services.llm import extract_interaction
 
@@ -143,6 +145,10 @@ def create_interaction(
     db.add(interaction)
     db.flush()
 
+    # names co-mentioned here -> suggested "works_with" edges for a human to confirm
+    connections_svc.suggest_from_interaction(db, interaction)
+
+    recompute_importance(db, rel)
     scoring.recompute_and_store(db, rel, reason="interaction logged")
     audit.record(
         db,
@@ -194,6 +200,8 @@ def update_interaction(
                 rescore = True
 
     db.flush()
+    if rescore or "sentiment" in data:
+        recompute_importance(db, interaction.relationship_ref)
     if rescore:
         scoring.recompute_and_store(
             db, interaction.relationship_ref, reason="interaction edited"

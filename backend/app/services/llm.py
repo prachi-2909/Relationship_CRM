@@ -4,6 +4,18 @@ One entry point, ``extract_interaction``, always returns a schema-validated
 ``ExtractionResult``. With no LLM endpoint configured it runs a deterministic
 offline stub so the rest of the system stays testable and demoable; set
 ``LLM_BASE_URL`` / ``LLM_MODEL`` to use any OpenAI-compatible chat endpoint.
+
+Groq (hosted, OpenAI-compatible)::
+
+    LLM_BASE_URL=https://api.groq.com/openai/v1
+    LLM_MODEL=llama-3.1-8b-instant
+    LLM_API_KEY=gsk_...
+
+Local Ollama (no key, but needs the RAM for the model)::
+
+    LLM_BASE_URL=http://localhost:11434/v1
+    LLM_MODEL=llama3.1:8b
+    LLM_TIMEOUT_SECONDS=120     # first call loads the model into memory
 """
 
 from __future__ import annotations
@@ -149,7 +161,7 @@ def _llm_extract(text: str, interaction_type: str) -> ExtractionResult:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
 
-    data = json.loads(content)
+    data = json.loads(_json_blob(content))
     return ExtractionResult(
         summary=str(data.get("summary", ""))[:1000],
         sentiment=_coerce_sentiment(data.get("sentiment")),
@@ -166,6 +178,58 @@ def _coerce_sentiment(value: object) -> Sentiment:
         return Sentiment(str(value).lower())
     except ValueError:
         return Sentiment.UNKNOWN
+
+
+def _json_blob(content: str) -> str:
+    """Pull the JSON object out of a model reply.
+
+    Smaller local models (via Ollama) often wrap the object in a ```json fence
+    or add a line of preamble even when told not to; take the outermost {...}.
+    """
+    text = content.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text
+
+
+def chat(system: str, user: str, *, temperature: float = 0.2) -> str | None:
+    """Free-form completion via the configured OpenAI-compatible endpoint.
+
+    Returns None when no endpoint is set (the caller falls back to a template)
+    or when the call fails. Reusable by any read-only agent that needs prose.
+    """
+    if not settings.llm_base_url:
+        return None
+    try:
+        import httpx
+
+        headers = {"Content-Type": "application/json"}
+        if settings.llm_api_key:
+            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
+        url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            resp = client.post(
+                url,
+                json={
+                    "model": settings.llm_model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "temperature": temperature,
+                },
+                headers=headers,
+            )
+            resp.raise_for_status()
+            text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+            return text or None
+    except Exception:
+        return None
 
 
 def extract_interaction(text: str, *, interaction_type: str = "note") -> ExtractionResult:

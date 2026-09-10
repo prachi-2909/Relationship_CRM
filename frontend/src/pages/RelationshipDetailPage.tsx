@@ -10,7 +10,6 @@ import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
   DIRECTIONS,
-  IMPORTANCE_VALUES,
   INTERACTION_TYPES,
   isOverdue,
   RELATIONSHIP_STATUSES,
@@ -19,6 +18,7 @@ import {
   type InteractionDetail,
   type InteractionListResponse,
   type InteractionType,
+  type RelationshipBrief,
   type RelationshipDetail,
   type ScoreHistoryEntry,
   type TaskListResponse,
@@ -113,6 +113,8 @@ export function RelationshipDetailPage() {
         <Badge tone="neutral">{rel.official.level ?? "level —"}</Badge>
       </div>
 
+      <BriefCard relId={relId} />
+
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.6fr]">
         <div className="space-y-4">
           <div className="rounded-lg border border-border bg-card shadow-sm p-4">
@@ -142,21 +144,13 @@ export function RelationshipDetailPage() {
               )}
 
               <span className="text-muted-foreground">Importance</span>
-              {canEdit ? (
-                <select
-                  className={select}
-                  value={rel.importance}
-                  onChange={(e) => patchRel.mutate({ importance: e.target.value })}
-                >
-                  {IMPORTANCE_VALUES.map((i) => (
-                    <option key={i} value={i}>
-                      {i}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="capitalize">{rel.importance}</span>
-              )}
+              <span
+                className="capitalize"
+                title="Auto-computed from the official's level and the sentiment of recent interactions"
+              >
+                {rel.importance}
+                <span className="ml-1.5 text-xs text-muted-foreground">· auto</span>
+              </span>
 
               <span className="text-muted-foreground">Owner</span>
               <span>
@@ -282,6 +276,187 @@ export function RelationshipDetailPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BriefCard({ relId }: { relId: number }) {
+  const [open, setOpen] = useState(false);
+  const briefQuery = useQuery({
+    queryKey: ["relationship", relId, "brief"],
+    queryFn: () => api<RelationshipBrief>(`/relationships/${relId}/brief`),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const section =
+    "text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-card shadow-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="font-heading text-sm font-semibold text-foreground">
+            Relationship brief
+          </span>
+          <span className="text-xs text-muted-foreground">
+            read-only · synthesised from what's on record
+          </span>
+        </span>
+        <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-4 py-4 text-sm">
+          {briefQuery.isPending && (
+            <p className="text-muted-foreground">Composing…</p>
+          )}
+          {briefQuery.error && (
+            <p className="text-destructive">
+              {briefQuery.error instanceof ApiError
+                ? briefQuery.error.message
+                : "Could not build the brief."}
+            </p>
+          )}
+          {briefQuery.data && (
+            <BriefBody brief={briefQuery.data} section={section} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BriefBody({
+  brief,
+  section,
+}: {
+  brief: RelationshipBrief;
+  section: string;
+}) {
+  const rec = brief.reconnect_opportunity;
+  const sh = brief.stakeholders;
+  const connections = sh?.connections ?? [];
+  const mentioned = sh?.mentioned ?? [];
+  return (
+    <div className="space-y-4">
+      <p className="leading-relaxed text-foreground">{brief.narrative}</p>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className={section}>What's important</div>
+          <p className="mt-1 text-muted-foreground">{brief.what_is_important}</p>
+        </div>
+
+        <div>
+          <div className={section}>What changed</div>
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {brief.what_changed.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className={section}>Opportunity to reconnect</div>
+          <p className="mt-1">
+            <Badge tone={rec.yes ? "good" : "neutral"}>
+              {rec.yes ? "yes" : "not now"}
+            </Badge>{" "}
+            <span className="text-muted-foreground">{rec.reason}</span>
+          </p>
+        </div>
+
+        <div>
+          <div className={section}>Next interaction</div>
+          <p className="mt-1 text-muted-foreground">{brief.next_interaction}</p>
+        </div>
+      </div>
+
+      <div>
+        <div className={section}>Key stakeholders</div>
+        {connections.length > 0 ? (
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {connections.map((c, i) => (
+              <li key={i}>
+                <Link
+                  to={`/officials/${c.official_id}`}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {c.name}
+                </Link>
+                <span className="text-xs"> — {c.label.replace(c.name, "").trim()}</span>
+                {c.note && <span className="text-xs"> · {c.note}</span>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-muted-foreground/70">
+            No connections mapped yet.
+          </p>
+        )}
+        {mentioned.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Mentioned, not yet linked: {mentioned.join(", ")}
+          </p>
+        )}
+        {(sh?.suggested_count ?? 0) > 0 && (
+          <p className="mt-0.5 text-xs text-muted-foreground/70">
+            {sh.suggested_count} suggested connection
+            {sh.suggested_count === 1 ? "" : "s"} to review on the official's page.
+          </p>
+        )}
+      </div>
+
+      {(brief.recent_commitments.length > 0 ||
+        brief.open_followups.length > 0 ||
+        brief.upcoming_dates.length > 0) && (
+        <div className="grid gap-4 border-t border-border pt-3 sm:grid-cols-3">
+          {brief.open_followups.length > 0 && (
+            <div>
+              <div className={section}>Open follow-ups</div>
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {brief.open_followups.map((f, i) => (
+                  <li key={i}>
+                    {f.title}
+                    {f.overdue && <Badge tone="danger"> overdue</Badge>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {brief.recent_commitments.length > 0 && (
+            <div>
+              <div className={section}>Recent commitments</div>
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {brief.recent_commitments.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {brief.upcoming_dates.length > 0 && (
+            <div>
+              <div className={section}>Upcoming dates</div>
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {brief.upcoming_dates.map((d, i) => (
+                  <li key={i}>
+                    {d.kind} · in {d.in_days} days
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground/60">
+        Generated by {brief.generated_by}. Not a recommendation to send anything —
+        a human decides the next step.
+      </p>
     </div>
   );
 }

@@ -6,12 +6,17 @@ import { Badge, VerificationBadge } from "../components/Badge";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
+  CONNECTION_TYPE_LABELS,
+  CONNECTION_TYPES,
   DATE_KIND_LABELS,
   FIELD_LABELS,
   PROVENANCED_FIELDS,
+  type ConnectionType,
   type DateKind,
   type OfficialDate,
   type OfficialDetail,
+  type OfficialListResponse,
+  type OfficialGraph,
   type OrgUnit,
   type ProvenancedField,
   type TimelineEntry,
@@ -184,6 +189,12 @@ export function OfficialProfilePage() {
         <div className="space-y-6">
           <DatedFacts officialId={officialId} canEdit={canEdit} isAdmin={isAdmin} />
 
+          <Connections
+            officialId={officialId}
+            officialName={official.name}
+            canEdit={canEdit}
+          />
+
           <div className="rounded-lg border border-border bg-card shadow-sm p-4">
             <div className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Timeline
@@ -337,6 +348,315 @@ function DatedFacts({
         Only verified dates trigger engagement moments.
       </p>
     </div>
+  );
+}
+
+function Connections({
+  officialId,
+  officialName,
+  canEdit,
+}: {
+  officialId: number;
+  officialName: string;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
+
+  const graphQuery = useQuery({
+    queryKey: ["official", officialId, "connections"],
+    queryFn: () => api<OfficialGraph>(`/officials/${officialId}/connections`),
+  });
+  const invalidate = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["official", officialId, "connections"],
+    });
+    queryClient.invalidateQueries({ queryKey: ["relationship"] });
+  };
+
+  const decide = useMutation({
+    mutationFn: (vars: { id: number; status: "confirmed" | "dismissed" }) =>
+      api(`/connections/${vars.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: vars.status }),
+      }),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (id: number) => api(`/connections/${id}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+  const rescan = useMutation({
+    mutationFn: () =>
+      api(`/officials/${officialId}/connections/rescan`, { method: "POST" }),
+    onSuccess: invalidate,
+  });
+
+  const confirmed = graphQuery.data?.confirmed ?? [];
+  const suggested = graphQuery.data?.suggested ?? [];
+
+  return (
+    <div className="rounded-lg border border-border bg-card shadow-sm p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Connections
+        </div>
+        {canEdit && (
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => rescan.mutate()}
+              disabled={rescan.isPending}
+              className="rounded border border-border px-2 py-0.5 text-xs hover:bg-muted disabled:opacity-60"
+              title="Re-scan this person's interactions for co-mentioned officials"
+            >
+              {rescan.isPending ? "Scanning…" : "Rescan"}
+            </button>
+            <button
+              onClick={() => setAdding((v) => !v)}
+              className="rounded border border-border px-2 py-0.5 text-xs hover:bg-muted"
+            >
+              {adding ? "Close" : "Add"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {confirmed.length === 0 && suggested.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No connections yet. Add one, or Rescan to pull co-mentions from
+          interactions.
+        </p>
+      )}
+
+      {confirmed.length > 0 && (
+        <ul className="space-y-1.5">
+          {confirmed.map((n) => (
+            <li
+              key={n.connection_id}
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <span className="text-foreground">
+                <Link
+                  to={`/officials/${n.official_id}`}
+                  className="font-medium hover:underline"
+                >
+                  {n.name}
+                </Link>
+                <span className="ml-1.5 text-xs text-muted-foreground">
+                  {n.label.replace(n.name, "").trim() || CONNECTION_TYPE_LABELS[n.type]}
+                </span>
+              </span>
+              {canEdit && (
+                <button
+                  onClick={() => remove.mutate(n.connection_id)}
+                  className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                >
+                  remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {suggested.length > 0 && (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Suggested · confirm or dismiss
+          </div>
+          <ul className="space-y-1.5">
+            {suggested.map((n) => (
+              <li
+                key={n.connection_id}
+                className="flex items-center justify-between gap-2 text-sm"
+              >
+                <span className="text-muted-foreground">
+                  <Link
+                    to={`/officials/${n.official_id}`}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {n.name}
+                  </Link>{" "}
+                  · {CONNECTION_TYPE_LABELS[n.type].toLowerCase()}
+                  <span className="ml-1 text-[11px]">({n.source})</span>
+                </span>
+                {canEdit && (
+                  <span className="flex shrink-0 gap-1.5">
+                    <button
+                      onClick={() =>
+                        decide.mutate({ id: n.connection_id, status: "confirmed" })
+                      }
+                      className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground hover:opacity-90"
+                    >
+                      confirm
+                    </button>
+                    <button
+                      onClick={() =>
+                        decide.mutate({ id: n.connection_id, status: "dismissed" })
+                      }
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:bg-muted"
+                    >
+                      dismiss
+                    </button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {adding && (
+        <AddConnectionForm
+          officialId={officialId}
+          officialName={officialName}
+          onDone={() => {
+            setAdding(false);
+            invalidate();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddConnectionForm({
+  officialId,
+  officialName,
+  onDone,
+}: {
+  officialId: number;
+  officialName: string;
+  onDone: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<{ id: number; name: string } | null>(null);
+  const [type, setType] = useState<ConnectionType>("works_with");
+  const [note, setNote] = useState("");
+
+  const searchQuery = useQuery({
+    queryKey: ["officials", "pick", query],
+    queryFn: () =>
+      api<OfficialListResponse>(
+        `/officials?q=${encodeURIComponent(query)}&limit=6`,
+      ),
+    enabled: query.trim().length >= 2 && !picked,
+  });
+
+  const create = useMutation({
+    mutationFn: () =>
+      api("/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          from_official_id: officialId,
+          to_official_id: picked!.id,
+          type,
+          note: note || null,
+        }),
+      }),
+    onSuccess: onDone,
+  });
+
+  const field =
+    "rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+
+  // reports_to: "<official> reports to <picked>"; introduced_by likewise reads
+  // "<official> was introduced by <picked>". works_with is symmetric.
+  const relationReads =
+    type === "reports_to"
+      ? `${officialName} reports to ${picked?.name ?? "…"}`
+      : type === "introduced_by"
+        ? `${officialName} was introduced by ${picked?.name ?? "…"}`
+        : `${officialName} works with ${picked?.name ?? "…"}`;
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (picked) create.mutate();
+      }}
+      className="mt-3 space-y-2 border-t border-border pt-3"
+    >
+      {picked ? (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-medium text-foreground">{picked.name}</span>
+          <button
+            type="button"
+            onClick={() => setPicked(null)}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            change
+          </button>
+        </div>
+      ) : (
+        <div>
+          <input
+            className={`${field} w-full`}
+            placeholder="Find the other official…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {searchQuery.data && searchQuery.data.items.length > 0 && (
+            <ul className="mt-1 rounded-md border border-border">
+              {searchQuery.data.items
+                .filter((o) => o.id !== officialId)
+                .map((o) => (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPicked({ id: o.id, name: o.name });
+                        setQuery("");
+                      }}
+                      className="block w-full px-2 py-1 text-left text-sm hover:bg-muted"
+                    >
+                      {o.name}
+                      {o.level && (
+                        <span className="text-xs text-muted-foreground">
+                          {" "}
+                          · {o.level}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className={field}
+          value={type}
+          onChange={(e) => setType(e.target.value as ConnectionType)}
+        >
+          {CONNECTION_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {CONNECTION_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+        <input
+          className={`${field} flex-1`}
+          placeholder="note (optional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">Reads: {relationReads}</p>
+      {create.error instanceof ApiError && (
+        <p className="text-xs text-destructive">{create.error.message}</p>
+      )}
+      <button
+        type="submit"
+        disabled={!picked || create.isPending}
+        className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
+      >
+        {create.isPending ? "Saving…" : "Add connection"}
+      </button>
+    </form>
   );
 }
 

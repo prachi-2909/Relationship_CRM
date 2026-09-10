@@ -23,9 +23,50 @@ def test_manager_creating_relationship_claims_it(client, make_user, login):
     assert resp.status_code == 201
     body = resp.json()
     assert body["owner_id"] == me["id"]
-    # importance seeded from a leadership level
+    # importance is derived from the official's level
     assert body["importance"] == "strategic"
     assert body["score_components"]["_version"]
+
+
+def test_importance_is_derived_and_bumped_by_positive_engagement(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+
+    official = _official(client, "Meera Iyer", "AGM")  # AGM -> important
+    rel = client.post(
+        "/api/v1/relationships", json={"official_id": official["id"]}
+    ).json()
+    assert rel["importance"] == "important"
+
+    # two clearly positive interactions -> sentiment bump -> strategic
+    for _ in range(2):
+        client.post(
+            "/api/v1/interactions",
+            json={
+                "relationship_id": rel["id"],
+                "type": "meeting",
+                "raw_notes": "Great meeting. They were very pleased and thanked the team. "
+                "Everything is resolved and approved.",
+            },
+        )
+    detail = client.get(f"/api/v1/relationships/{rel['id']}").json()
+    assert detail["importance"] == "strategic"
+
+    # importance cannot be set by hand
+    patched = client.patch(
+        f"/api/v1/relationships/{rel['id']}", json={"importance": "routine"}
+    )
+    # the field is ignored, not rejected
+    assert patched.status_code == 200
+    assert patched.json()["importance"] == "strategic"
+
+
+def test_routine_level_stays_routine_without_positive_engagement(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    official = _official(client, "Junior Clerk", "Scale I")
+    rel = client.post(
+        "/api/v1/relationships", json={"official_id": official["id"]}
+    ).json()
+    assert rel["importance"] == "routine"
 
 
 def test_one_relationship_per_official(client, make_user, login):

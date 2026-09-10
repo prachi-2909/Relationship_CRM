@@ -116,6 +116,30 @@ def create_official(
     )
     db.add(official)
     db.flush()
+
+    # Manual entry: record "Manual entry" provenance for every field the creator
+    # filled in. An admin vouches for what they type, so those fields are marked
+    # verified straight away; a relationship manager's entries wait for review.
+    verified = actor.role is Role.ADMIN
+    now = datetime.now(timezone.utc)
+    for field in PROVENANCED_FIELDS:
+        if getattr(official, field) in (None, ""):
+            continue
+        db.add(
+            OfficialFieldProvenance(
+                official_id=official.id,
+                field=field,
+                source="Manual entry",
+                confidence=100,
+                verification_status=(
+                    FieldVerification.VERIFIED if verified else FieldVerification.UNVERIFIED
+                ),
+                verified_by=actor.id if verified else None,
+                verified_at=now if verified else None,
+            )
+        )
+    db.flush()
+    db.refresh(official)
     recompute_verification(official)
     audit.record(
         db,
@@ -123,7 +147,11 @@ def create_official(
         entity_type="official",
         entity_id=official.id,
         actor_id=actor.id,
-        after={"name": official.name, "level": official.level},
+        after={
+            "name": official.name,
+            "level": official.level,
+            "fields_verified": verified,
+        },
     )
     db.commit()
     db.refresh(official)

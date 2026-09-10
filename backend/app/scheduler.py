@@ -17,6 +17,7 @@ from .db import SessionLocal
 from .models.relationship import Relationship
 from .models.task import Task, TaskStatus
 from .services import audit, moments, scoring
+from .services.importance import recompute as recompute_importance
 
 logger = logging.getLogger("rcrm.scheduler")
 settings = get_settings()
@@ -27,6 +28,7 @@ _scheduler = None
 def recompute_all_scores(db: Session) -> int:
     rels = db.scalars(select(Relationship)).all()
     for rel in rels:
+        recompute_importance(db, rel)
         scoring.recompute_and_store(db, rel, reason="nightly")
     db.flush()
     return len(rels)
