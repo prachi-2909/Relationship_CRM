@@ -19,6 +19,7 @@ export function OrganisationPage() {
   const isAdmin = user?.role === "admin";
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const typesQuery = useQuery({
     queryKey: ["unit-types"],
@@ -46,6 +47,23 @@ export function OrganisationPage() {
       setShowForm(false);
     },
   });
+
+  const updateUnit = useMutation({
+    mutationFn: (vars: { id: number; body: Record<string, unknown> }) =>
+      api<OrgUnit>(`/organization/units/${vars.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(vars.body),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      setEditing(false);
+    },
+  });
+
+  const selectUnit = (id: number) => {
+    setSelectedId(id);
+    setEditing(false);
+  };
 
   const typeLabel = (code: string) =>
     typesQuery.data?.find((t) => t.code === code)?.label ?? code;
@@ -89,7 +107,7 @@ export function OrganisationPage() {
           {rows.map(({ node, depth }) => (
             <button
               key={node.id}
-              onClick={() => setSelectedId(node.id)}
+              onClick={() => selectUnit(node.id)}
               className={`flex w-full items-center gap-2 border-b border-border px-4 py-2 text-left text-sm last:border-b-0 hover:bg-muted ${
                 selectedId === node.id ? "bg-primary/10" : ""
               }`}
@@ -108,25 +126,166 @@ export function OrganisationPage() {
               Select a unit to see its details.
             </p>
           )}
-          {selected && (
-            <dl className="space-y-3 text-sm">
-              <Detail label="Name" value={selected.name} />
-              <Detail label="Type" value={typeLabel(selected.type_code)} />
-              <Detail label="Location" value={selected.location ?? "—"} />
-              <Detail label="Department" value={selected.department ?? "—"} />
-              <Detail label="Status" value={selected.status} />
-              <Detail
-                label="Parent"
-                value={
-                  rows.find((r) => r.node.id === selected.parent_id)?.node.name ??
-                  "— (top level)"
-                }
-              />
-            </dl>
+          {selected && !editing && (
+            <div>
+              <dl className="space-y-3 text-sm">
+                <Detail label="Name" value={selected.name} />
+                <Detail label="Type" value={typeLabel(selected.type_code)} />
+                <Detail label="Location" value={selected.location ?? "—"} />
+                <Detail label="Department" value={selected.department ?? "—"} />
+                <Detail label="Status" value={selected.status} />
+                <Detail
+                  label="Parent"
+                  value={
+                    rows.find((r) => r.node.id === selected.parent_id)?.node.name ??
+                    "— (top level)"
+                  }
+                />
+              </dl>
+              {isAdmin && (
+                <div className="mt-4 flex gap-2 border-t border-border pt-3">
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="rounded border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() =>
+                      updateUnit.mutate({
+                        id: selected.id,
+                        body: {
+                          status: selected.status === "archived" ? "active" : "archived",
+                        },
+                      })
+                    }
+                    className="rounded border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    {selected.status === "archived" ? "Reactivate" : "Archive"}
+                  </button>
+                  {updateUnit.error instanceof ApiError && (
+                    <span className="self-center text-xs text-destructive">
+                      {updateUnit.error.message}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {selected && editing && typesQuery.data && (
+            <UnitEditForm
+              key={selected.id}
+              unit={selected}
+              types={typesQuery.data}
+              units={rows.map((r) => r.node).filter((u) => u.id !== selected.id)}
+              pending={updateUnit.isPending}
+              error={updateUnit.error}
+              onSubmit={(body) => updateUnit.mutate({ id: selected.id, body })}
+              onCancel={() => setEditing(false)}
+            />
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function UnitEditForm({
+  unit,
+  types,
+  units,
+  pending,
+  error,
+  onSubmit,
+  onCancel,
+}: {
+  unit: OrgUnit;
+  types: UnitType[];
+  units: OrgUnit[];
+  pending: boolean;
+  error: unknown;
+  onSubmit: (body: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(unit.name);
+  const [typeCode, setTypeCode] = useState(unit.type_code);
+  const [parentId, setParentId] = useState<string>(
+    unit.parent_id != null ? String(unit.parent_id) : "",
+  );
+  const [location, setLocation] = useState(unit.location ?? "");
+  const [department, setDepartment] = useState(unit.department ?? "");
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    onSubmit({
+      name,
+      type_code: typeCode,
+      parent_id: parentId ? Number(parentId) : null,
+      location: location || null,
+      department: department || null,
+    });
+  };
+
+  const input =
+    "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+
+  return (
+    <form onSubmit={submit} className="space-y-3 text-sm">
+      <label className="block">
+        <span className="mb-1 block font-medium text-foreground">Name</span>
+        <input className={input} required value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="mb-1 block font-medium text-foreground">Type</span>
+        <select className={input} value={typeCode} onChange={(e) => setTypeCode(e.target.value)}>
+          {types.map((t) => (
+            <option key={t.code} value={t.code}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-1 block font-medium text-foreground">Parent unit</span>
+        <select className={input} value={parentId} onChange={(e) => setParentId(e.target.value)}>
+          <option value="">— top level —</option>
+          {units.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-1 block font-medium text-foreground">Location</span>
+        <input className={input} value={location} onChange={(e) => setLocation(e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="mb-1 block font-medium text-foreground">Department</span>
+        <input
+          className={input}
+          value={department}
+          onChange={(e) => setDepartment(e.target.value)}
+        />
+      </label>
+      {error instanceof ApiError && <p className="text-sm text-destructive">{error.message}</p>}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
+        >
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

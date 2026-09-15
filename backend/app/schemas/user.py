@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field
 from ..models.user import Role, UserStatus
 from .auth import UserOut
 
-__all__ = ["UserCreate", "UserUpdate", "UserOut"]
+__all__ = ["UserCreate", "UserUpdate", "PasswordReset", "UserOut"]
 
 
 class UserCreate(BaseModel):
@@ -19,3 +19,7 @@ class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     role: Role | None = None
     status: UserStatus | None = None
+
+
+class PasswordReset(BaseModel):
+    new_password: str = Field(min_length=8, max_length=72)

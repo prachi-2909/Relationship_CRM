@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ...db import get_db
 from ...models.user import Role, User, UserStatus
-from ...schemas.user import UserCreate, UserOut, UserUpdate
+from ...schemas.user import PasswordReset, UserCreate, UserOut, UserUpdate
 from ...security.deps import require_roles
 from ...security.passwords import hash_password
 from ...services import audit
@@ -91,6 +91,34 @@ def update_user(
         actor_id=actor.id,
         before=before,
         after=after,
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/{user_id}/reset-password", response_model=UserOut)
+def reset_password(
+    user_id: int,
+    payload: PasswordReset,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_roles(Role.ADMIN)),
+):
+    """Admin sets a new password for a user directly - no email/SMTP in this
+    app, so this is the only reset path (self-service password change is a
+    separate, later addition if it's ever needed)."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    user.password_hash = hash_password(payload.new_password)
+    audit.record(
+        db,
+        action="user.password_reset",
+        entity_type="user",
+        entity_id=user.id,
+        actor_id=actor.id,
+        after={"reset_by": actor.email},  # never the password itself
     )
     db.commit()
     db.refresh(user)
