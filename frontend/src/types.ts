@@ -515,3 +515,17 @@ export interface AuditListResponse {
   limit: number;
   offset: number;
 }
+
+// --- supervisor / ask ---------------------------------------------------
+
+export interface AskConsidered {
+  relationship_id: number;
+  official_name: string;
+}
+
+export interface AskResponse {
+  answer: string;
+  generated_by: string;
+  scope: "targeted" | "portfolio";
+  considered: AskConsidered[];
+}
