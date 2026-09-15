@@ -13,10 +13,10 @@ from ..db import SessionLocal
 from ..models.org_unit_type import OrgUnitType
 
 DEFAULT_UNIT_TYPES: list[tuple[str, str, int]] = [
-    ("HO", "Head Office", 10),
-    ("RO", "Regional Office", 20),
-    ("ZO", "Zonal Office", 30),
-    ("AO", "Area Office", 40),
+    ("CC", "Corporate Centre", 10),
+    ("LHO", "LHO", 20),
+    ("RBO", "RBO", 30),
+    ("AO", "AO", 40),
     ("BRANCH", "Branch", 50),
 ]
 

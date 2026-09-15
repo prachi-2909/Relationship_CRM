@@ -12,14 +12,14 @@ def test_unit_types_seeded_and_require_auth(client, make_user, login):
     resp = client.get("/api/v1/organization/unit-types")
     assert resp.status_code == 200
     codes = {t["code"] for t in resp.json()}
-    assert {"HO", "RO", "ZO", "AO", "BRANCH"} <= codes
+    assert {"CC", "LHO", "RBO", "AO", "BRANCH"} <= codes
 
 
 def test_only_admin_creates_units(client, make_user, login):
     _as(make_user, login, Role.RELATIONSHIP_MANAGER, "rm@example.com")
     resp = client.post(
         "/api/v1/organization/units",
-        json={"name": "West RO", "type_code": "RO"},
+        json={"name": "West LHO", "type_code": "LHO"},
     )
     assert resp.status_code == 403
 
@@ -29,11 +29,11 @@ def test_admin_builds_and_reads_tree(client, make_user, login):
 
     parent_a = client.post(
         "/api/v1/organization/units",
-        json={"name": "West RO", "type_code": "RO"},
+        json={"name": "West LHO", "type_code": "LHO"},
     ).json()
     child_a = client.post(
         "/api/v1/organization/units",
-        json={"name": "Pune ZO", "type_code": "ZO", "parent_id": parent_a["id"]},
+        json={"name": "Pune RBO", "type_code": "RBO", "parent_id": parent_a["id"]},
     ).json()
     client.post(
         "/api/v1/organization/units",
@@ -42,8 +42,8 @@ def test_admin_builds_and_reads_tree(client, make_user, login):
 
     tree = client.get("/api/v1/organization/units/tree").json()
     assert len(tree) == 1
-    assert tree[0]["name"] == "West RO"
-    assert tree[0]["children"][0]["name"] == "Pune ZO"
+    assert tree[0]["name"] == "West LHO"
+    assert tree[0]["children"][0]["name"] == "Pune RBO"
     assert tree[0]["children"][0]["children"][0]["name"] == "FC Road Branch"
 
 
@@ -59,11 +59,11 @@ def test_unknown_type_is_rejected(client, make_user, login):
 def test_cannot_move_unit_under_itself(client, make_user, login):
     _as(make_user, login, Role.ADMIN, "admin@example.com")
     parent = client.post(
-        "/api/v1/organization/units", json={"name": "P", "type_code": "RO"}
+        "/api/v1/organization/units", json={"name": "P", "type_code": "LHO"}
     ).json()
     child = client.post(
         "/api/v1/organization/units",
-        json={"name": "C", "type_code": "ZO", "parent_id": parent["id"]},
+        json={"name": "C", "type_code": "RBO", "parent_id": parent["id"]},
     ).json()
 
     assert (
@@ -85,11 +85,11 @@ def test_cannot_move_unit_under_itself(client, make_user, login):
 def test_archive_blocked_while_children_active(client, make_user, login):
     _as(make_user, login, Role.ADMIN, "admin@example.com")
     parent = client.post(
-        "/api/v1/organization/units", json={"name": "P", "type_code": "RO"}
+        "/api/v1/organization/units", json={"name": "P", "type_code": "LHO"}
     ).json()
     client.post(
         "/api/v1/organization/units",
-        json={"name": "C", "type_code": "ZO", "parent_id": parent["id"]},
+        json={"name": "C", "type_code": "RBO", "parent_id": parent["id"]},
     )
     resp = client.patch(
         f"/api/v1/organization/units/{parent['id']}", json={"status": "archived"}

@@ -32,28 +32,28 @@ from .seed_unit_types import ensure_defaults
 
 HEAD_OFFICE = {
     "name": "Head Office",
-    "type": "HO",
+    "type": "CC",
     "location": "Delhi",
     "mail": "ho.desk@partner.example",
 }
 REGIONAL = [
-    {"name": "Regional Office — West", "type": "RO", "location": "Mumbai"},
+    {"name": "Regional Office — West", "type": "LHO", "location": "Mumbai"},
     {
         "name": "Regional Office — East",
-        "type": "RO",
+        "type": "LHO",
         "location": "Kolkata",
         "mail": "ro.east@partner.example",
     },
 ]
 ZONAL = [
-    {"name": "Zone 2", "type": "ZO", "parent": "Regional Office — West"},
+    {"name": "Zone 2", "type": "RBO", "parent": "Regional Office — West"},
     {
         "name": "Zone 5",
-        "type": "ZO",
+        "type": "RBO",
         "parent": "Regional Office — East",
         "mail": "zone5@partner.example",
     },
-    {"name": "Zone 7", "type": "ZO", "parent": "Regional Office — West"},
+    {"name": "Zone 7", "type": "RBO", "parent": "Regional Office — West"},
 ]
 BRANCHES = [
     {"name": "Andheri Branch (2201)", "type": "BRANCH", "parent": "Zone 7", "mail": "br.2201@partner.example"},

@@ -66,6 +66,8 @@ class OfficialSummary(BaseModel):
     level: str | None
     location: str | None
     organization_unit_id: int | None
+    organization_unit_name: str | None = None
+    organization_unit_type: str | None = None
     status: OfficialStatus
     verification_status: VerificationStatus
 

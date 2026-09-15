@@ -85,6 +85,8 @@ export interface OfficialSummary {
   level: string | null;
   location: string | null;
   organization_unit_id: number | null;
+  organization_unit_name: string | null;
+  organization_unit_type: string | null;
   status: OfficialStatus;
   verification_status: VerificationStatus;
 }

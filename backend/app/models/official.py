@@ -69,6 +69,17 @@ class Official(Base, TimestampMixin):
     )
 
     organization_unit = relationship("OrganizationUnit", lazy="joined")
+
+    @property
+    def organization_unit_name(self) -> str | None:
+        """Denormalized for list views - no extra query, `organization_unit`
+        is already eager-loaded (lazy="joined") wherever an Official is."""
+        return self.organization_unit.name if self.organization_unit else None
+
+    @property
+    def organization_unit_type(self) -> str | None:
+        return self.organization_unit.type_code if self.organization_unit else None
+
     field_provenance: Mapped[list["OfficialFieldProvenance"]] = relationship(
         back_populates="official",
         cascade="all, delete-orphan",

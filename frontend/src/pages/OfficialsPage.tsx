@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { VerificationBadge } from "../components/Badge";
+import { Badge, VerificationBadge } from "../components/Badge";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import type {
@@ -133,6 +133,7 @@ export function OfficialsPage() {
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Designation</th>
                 <th className="px-4 py-2 font-medium">Level</th>
+                <th className="px-4 py-2 font-medium">Unit</th>
                 <th className="px-4 py-2 font-medium">Location</th>
                 <th className="px-4 py-2 font-medium">Verification</th>
               </tr>
@@ -152,6 +153,18 @@ export function OfficialsPage() {
                     {o.designation ?? "—"}
                   </td>
                   <td className="px-4 py-2">{o.level ?? "—"}</td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {o.organization_unit_name ? (
+                      <>
+                        {o.organization_unit_type && (
+                          <Badge tone="neutral">{o.organization_unit_type}</Badge>
+                        )}{" "}
+                        {o.organization_unit_name}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-muted-foreground">
                     {o.location ?? "—"}
                   </td>
