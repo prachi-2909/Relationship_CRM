@@ -117,3 +117,76 @@ def test_portfolio_scopes_relationship_manager_to_own_book(client, make_user, lo
 
     rows = portfolio.scan(db, rm)
     assert [r["official_name"] for r in rows] == ["Their Contact"]
+
+
+def test_portfolio_surfaces_draft_ready_moment_and_overdue_task(
+    client, make_user, login, db
+):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    off = _official(client, "Meera Iyer", "AGM")
+    rel_id = _rel(client, off)
+
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.engagement_moment import EngagementMoment, MomentStatus, MomentType
+    from app.models.task import Task, TaskStatus
+
+    db.add(
+        EngagementMoment(
+            official_id=off,
+            relationship_id=rel_id,
+            type=MomentType.BIRTHDAY,
+            status=MomentStatus.DRAFT_READY,
+        )
+    )
+    db.add(
+        Task(
+            relationship_id=rel_id,
+            official_id=off,
+            title="Send the pricing sheet",
+            status=TaskStatus.OPEN,
+            due_at=datetime.now(timezone.utc) - timedelta(days=2),
+        )
+    )
+    db.commit()
+
+    admin = db.query(User).filter_by(email="admin@example.com").one()
+    rows = portfolio.scan(db, admin)
+    row = next(r for r in rows if r["official_name"] == "Meera Iyer")
+    assert row["moment_draft_ready"] is True
+    assert row["moments"] == [{"type": "birthday", "status": "draft_ready"}]
+    assert row["overdue_tasks"] == [
+        {"title": "Send the pricing sheet", "due_at": row["overdue_tasks"][0]["due_at"]}
+    ]
+
+    # end to end through /ask (template path in tests - no LLM configured)
+    resp = client.post(
+        "/api/v1/ask", json={"question": "What should I focus on this week?"}
+    )
+    body = resp.json()
+    assert "draft is ready to review" in body["answer"]
+    assert "Send the pricing sheet" in body["answer"]
+
+
+def test_moment_still_detected_is_not_reported_as_ready(client, make_user, login, db):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    off = _official(client, "Anita Rao", "AGM")
+    rel_id = _rel(client, off)
+
+    from app.models.engagement_moment import EngagementMoment, MomentStatus, MomentType
+
+    db.add(
+        EngagementMoment(
+            official_id=off,
+            relationship_id=rel_id,
+            type=MomentType.WORK_ANNIVERSARY,
+            status=MomentStatus.DETECTED,
+        )
+    )
+    db.commit()
+
+    admin = db.query(User).filter_by(email="admin@example.com").one()
+    rows = portfolio.scan(db, admin)
+    row = next(r for r in rows if r["official_name"] == "Anita Rao")
+    assert row["moment_draft_ready"] is False
+    assert row["open_moments"] == 1

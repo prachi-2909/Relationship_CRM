@@ -76,7 +76,18 @@ _SYSTEM_PROMPT = (
     "when one is actually called for), put one item per line starting with "
     "a hyphen, each followed by the reason; otherwise write a short plain "
     "paragraph. This is analysis for a human to act on, not a message to "
-    "send - never draft an email or greeting."
+    "send - never draft an email or greeting.\n\n"
+    "The data may include engagement moments (birthday/anniversary/"
+    "promotion/inactivity check-ins) and overdue follow-ups for each "
+    "relationship - fold these in when relevant instead of only talking "
+    "about score and contact gap:\n"
+    "- A moment with status draft_ready or approved (or moment_draft_ready "
+    "= true) means a draft already exists and is waiting for a human to "
+    "review and send - say so plainly (e.g. 'a birthday draft is ready to "
+    "review'). Never write the draft's wording yourself.\n"
+    "- A moment with status detected has not been drafted yet - at most "
+    "note that one is open, don't imply it is ready to send.\n"
+    "- Name any overdue follow-up by its title, not just that one exists."
 )
 
 
@@ -99,11 +110,18 @@ def _template_answer(question: str, scope: str, context: list[dict]) -> str:
             )
         return " ".join(lines)
     top = context[:5]
-    lines = [
-        f"{c['official_name']} — {c['band']} (score {c['score']}), "
-        f"{c['open_moments']} open moment(s), {c['overdue_followups']} overdue follow-up(s)"
-        for c in top
-    ]
+    lines = []
+    for c in top:
+        bits = [f"{c['official_name']} — {c['band']} (score {c['score']})"]
+        if c.get("moment_draft_ready"):
+            bits.append("a draft is ready to review")
+        elif c.get("open_moments"):
+            bits.append(f"{c['open_moments']} open moment(s)")
+        if c.get("overdue_tasks"):
+            bits.append("overdue: " + ", ".join(t["title"] for t in c["overdue_tasks"]))
+        elif c.get("overdue_followups"):
+            bits.append(f"{c['overdue_followups']} overdue follow-up(s)")
+        lines.append(", ".join(bits))
     return "Top relationships needing attention:\n" + "\n".join(f"- {l}" for l in lines)
 
 
