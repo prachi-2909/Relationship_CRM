@@ -22,9 +22,10 @@ class DateKind(str, enum.Enum):
     BIRTHDAY = "birthday"
     JOINED = "joined"
     PROMOTED = "promoted"
+    MARRIAGE_ANNIVERSARY = "marriage_anniversary"
 
 
-_kind = SAEnum(DateKind, native_enum=False, length=16, name="official_date_kind")
+_kind = SAEnum(DateKind, native_enum=False, length=24, name="official_date_kind")
 
 
 class OfficialDate(Base, TimestampMixin):

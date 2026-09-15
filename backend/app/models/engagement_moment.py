@@ -18,6 +18,7 @@ class MomentType(str, enum.Enum):
     PROMOTION = "promotion"
     BIRTHDAY = "birthday"
     WORK_ANNIVERSARY = "work_anniversary"
+    MARRIAGE_ANNIVERSARY = "marriage_anniversary"
     INACTIVITY = "inactivity"
 
 
@@ -29,7 +30,7 @@ class MomentStatus(str, enum.Enum):
     DISMISSED = "dismissed"
 
 
-_type = SAEnum(MomentType, native_enum=False, length=20, name="moment_type")
+_type = SAEnum(MomentType, native_enum=False, length=24, name="moment_type")
 _status = SAEnum(MomentStatus, native_enum=False, length=16, name="moment_status")
 
 

@@ -166,3 +166,24 @@ def test_no_send_endpoint_exists(client):
     # There is deliberately no route that transmits a message.
     paths = {r.path for r in client.app.routes}
     assert not any("send" in p and "moment" in p for p in paths)
+
+
+def test_upcoming_marriage_anniversary_creates_a_moment(client, make_user, login):
+    _admin(make_user, login)
+    official, rel = _active_relationship(client)
+    soon = (date.today() + timedelta(days=3)).replace(year=2010)
+    _verified_date(client, official["id"], "marriage_anniversary", soon.isoformat())
+
+    created = client.post("/api/v1/moments/detect").json()
+    assert created["created"] == 1
+
+    feed = client.get(
+        "/api/v1/moments", params={"type": "marriage_anniversary"}
+    ).json()
+    assert feed["total"] == 1
+    moment = client.get(f"/api/v1/moments/{feed['items'][0]['id']}").json()
+    assert moment["status"] == "detected"
+    assert "marriage anniversary" in moment["evidence"]["trigger"]
+
+    drafted = client.post(f"/api/v1/moments/{moment['id']}/draft").json()
+    assert "anniversary" in drafted["draft_text"].lower()

@@ -71,3 +71,22 @@ def test_relationship_manager_cannot_verify_date(client, make_user, login):
         ).status_code
         == 403
     )
+
+
+def test_marriage_anniversary_replaces_in_place_like_birthday(client, make_user, login):
+    _admin(make_user, login)
+    official = client.post("/api/v1/officials", json={"name": "C Nair"}).json()
+    oid = official["id"]
+
+    client.put(
+        f"/api/v1/officials/{oid}/dates/marriage_anniversary",
+        json={"value": "2015-02-14", "source": "manual entry"},
+    )
+    client.put(
+        f"/api/v1/officials/{oid}/dates/marriage_anniversary",
+        json={"value": "2015-02-15", "source": "corrected"},
+    )
+    dates = client.get(f"/api/v1/officials/{oid}/dates").json()
+    anniversaries = [d for d in dates if d["kind"] == "marriage_anniversary"]
+    assert len(anniversaries) == 1
+    assert anniversaries[0]["value"] == "2015-02-15"

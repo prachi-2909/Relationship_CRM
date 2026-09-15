@@ -207,6 +207,21 @@ def detect_for_relationship(
                         suppressed_reason=suppression)
             )
 
+    # --- marriage anniversary: verified, next occurrence within lookahead -
+    for d in _verified_dates(db, rel.official_id, DateKind.MARRIAGE_ANNIVERSARY):
+        nxt = _next_occurrence(d.value, today)
+        if today <= nxt <= today + lookahead:
+            if _existing_open(db, rel.id, MomentType.MARRIAGE_ANNIVERSARY, nxt):
+                continue
+            ev = _evidence(
+                db, rel, now,
+                trigger=f"marriage anniversary on {nxt.isoformat()}", source=d.source,
+            )
+            created.append(
+                _create(db, rel, MomentType.MARRIAGE_ANNIVERSARY, nxt, ev,
+                        suppressed_reason=suppression)
+            )
+
     # --- work anniversary: verified joining date, whole-year multiple -----
     for d in _verified_dates(db, rel.official_id, DateKind.JOINED):
         nxt = _next_occurrence(d.value, today)
@@ -321,6 +336,11 @@ def _static_draft(db: Session, moment: EngagementMoment, official, sender: str) 
             f"Dear {name},\n\nCongratulations on completing {years} years of "
             f"service. Thank you for your continued support.\n\n"
             f"Best regards,\n{sender}"
+        )
+    if moment.type is MomentType.MARRIAGE_ANNIVERSARY:
+        return (
+            f"Dear {name},\n\nWishing you and your family a very happy wedding "
+            f"anniversary.\n\nWarm regards,\n{sender}"
         )
     return (
         f"Dear {name},\n\nIt has been a while since we last connected - hope "

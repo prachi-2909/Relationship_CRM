@@ -420,12 +420,13 @@ export const ACTION_TONE: Record<RowAction, "good" | "primary" | "neutral"> = {
 
 // --- official dates ------------------------------------------------------
 
-export type DateKind = "birthday" | "joined" | "promoted";
+export type DateKind = "birthday" | "joined" | "promoted" | "marriage_anniversary";
 
 export const DATE_KIND_LABELS: Record<DateKind, string> = {
   birthday: "Birthday",
   joined: "Date of joining",
   promoted: "Promotion",
+  marriage_anniversary: "Marriage anniversary",
 };
 
 export interface OfficialDate {
@@ -446,6 +447,7 @@ export type MomentType =
   | "promotion"
   | "birthday"
   | "work_anniversary"
+  | "marriage_anniversary"
   | "inactivity";
 export type MomentStatus =
   | "detected"
@@ -458,6 +460,7 @@ export const MOMENT_TYPE_LABELS: Record<MomentType, string> = {
   promotion: "Promotion",
   birthday: "Birthday",
   work_anniversary: "Work anniversary",
+  marriage_anniversary: "Marriage anniversary",
   inactivity: "Inactivity",
 };
 
