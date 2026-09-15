@@ -162,6 +162,11 @@ export function MomentsPage() {
           )}
           {detailQuery.data && (
             <MomentPanel
+              // remount per moment so the draft/outcome text boxes reset
+              // to THIS moment's data instead of holding onto whichever
+              // moment was selected first (draft_text is prop-derived
+              // local state, so it needs a fresh instance per moment)
+              key={detailQuery.data.id}
               moment={detailQuery.data}
               canEdit={canEdit}
               onChanged={invalidate}
