@@ -100,7 +100,10 @@ def preview_import(
             name = official.name if official else norm.get("name") or "?"
             writes = {
                 k: norm[k]
-                for k in ("email", "designation", "department", "level", "location", "unit")
+                for k in (
+                    "email", "phone", "designation", "department", "level",
+                    "location", "unit",
+                )
                 if norm.get(k) and (official is None or not getattr(official, k, None))
             }
         samples.append(

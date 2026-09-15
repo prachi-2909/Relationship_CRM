@@ -146,3 +146,19 @@ def test_timeline_records_field_history(client, make_user, login):
     assert "official_field.verify" in actions
     # newest first
     assert actions.index("official_field.verify") < actions.index("official.create")
+
+
+def test_phone_is_stored_on_create_and_update(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    created = client.post(
+        "/api/v1/officials", json={"name": "D Nair", "phone": "9876543210"}
+    ).json()
+    assert created["phone"] == "9876543210"
+
+    updated = client.patch(
+        f"/api/v1/officials/{created['id']}", json={"phone": "9123456780"}
+    ).json()
+    assert updated["phone"] == "9123456780"
+
+    fetched = client.get(f"/api/v1/officials/{created['id']}").json()
+    assert fetched["phone"] == "9123456780"

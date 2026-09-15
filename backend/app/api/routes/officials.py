@@ -107,6 +107,7 @@ def create_official(
     official = Official(
         name=payload.name,
         email=payload.email,
+        phone=payload.phone,
         designation=payload.designation,
         department=payload.department,
         level=payload.level,

@@ -14,6 +14,7 @@ from ..models.official import (
 class OfficialBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=32)
     designation: str | None = Field(default=None, max_length=200)
     department: str | None = Field(default=None, max_length=200)
     level: str | None = Field(default=None, max_length=120)
@@ -28,6 +29,7 @@ class OfficialCreate(OfficialBase):
 class OfficialUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=32)
     designation: str | None = Field(default=None, max_length=200)
     department: str | None = Field(default=None, max_length=200)
     level: str | None = Field(default=None, max_length=120)
@@ -62,6 +64,7 @@ class OfficialSummary(BaseModel):
     id: int
     name: str
     email: str | None
+    phone: str | None
     designation: str | None
     level: str | None
     location: str | None

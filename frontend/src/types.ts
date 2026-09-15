@@ -81,6 +81,8 @@ export interface FieldProvenance {
 export interface OfficialSummary {
   id: number;
   name: string;
+  email: string | null;
+  phone: string | null;
   designation: string | null;
   level: string | null;
   location: string | null;

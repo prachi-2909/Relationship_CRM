@@ -109,6 +109,8 @@ export function OfficialProfilePage() {
         {official.status === "archived" && <Badge tone="warn">archived</Badge>}
       </div>
 
+      <ContactInfo official={official} canEdit={canEdit} onSaved={invalidate} />
+
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
           <div className="border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -217,6 +219,90 @@ export function OfficialProfilePage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ContactInfo({
+  official,
+  canEdit,
+  onSaved,
+}: {
+  official: OfficialDetail;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [email, setEmail] = useState(official.email ?? "");
+  const [phone, setPhone] = useState(official.phone ?? "");
+
+  const input =
+    "rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/officials/${official.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ email: email.trim() || null, phone: phone.trim() || null }),
+      }),
+    onSuccess: () => {
+      onSaved();
+      setEditing(false);
+    },
+  });
+
+  if (!editing) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <span>{official.email ?? "no email"}</span>
+        <span>{official.phone ?? "no phone"}</span>
+        {canEdit && (
+          <button
+            onClick={() => {
+              setEmail(official.email ?? "");
+              setPhone(official.phone ?? "");
+              setEditing(true);
+            }}
+            className="text-xs text-secondary hover:underline"
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <input
+        className={input}
+        placeholder="Email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <input
+        className={input}
+        placeholder="Phone"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+      />
+      <button
+        onClick={() => save.mutate()}
+        disabled={save.isPending}
+        className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
+      >
+        {save.isPending ? "Saving…" : "Save"}
+      </button>
+      <button
+        onClick={() => setEditing(false)}
+        className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+      >
+        Cancel
+      </button>
+      {save.error instanceof ApiError && (
+        <span className="text-xs text-destructive">{save.error.message}</span>
+      )}
     </div>
   );
 }

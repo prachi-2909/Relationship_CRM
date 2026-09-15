@@ -41,7 +41,7 @@ export function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [manual, setManual] = useState({
     name: "", designation: "", level: "", department: "", unit: "",
-    location: "", email: "",
+    location: "", email: "", phone: "",
   });
   const [activeId, setActiveId] = useState<number | null>(null);
 
@@ -69,7 +69,10 @@ export function ImportPage() {
     onSuccess: (created) => {
       onStaged(created);
       setCsvText("");
-      setManual({ name: "", designation: "", level: "", department: "", unit: "", location: "", email: "" });
+      setManual({
+        name: "", designation: "", level: "", department: "", unit: "",
+        location: "", email: "", phone: "",
+      });
     },
   });
 
@@ -88,10 +91,13 @@ export function ImportPage() {
 
   const submitManual = (e: FormEvent) => {
     e.preventDefault();
-    const headers = ["Name", "Designation", "Level", "Department", "Unit", "Location", "Email"];
+    const headers = [
+      "Name", "Designation", "Level", "Department", "Unit", "Location",
+      "Email", "Phone",
+    ];
     const row = [
       manual.name, manual.designation, manual.level, manual.department,
-      manual.unit, manual.location, manual.email,
+      manual.unit, manual.location, manual.email, manual.phone,
     ];
     const csv_text =
       headers.map(csvField).join(",") + "\n" + row.map(csvField).join(",") + "\n";
@@ -262,7 +268,7 @@ export function ImportPage() {
                   onChange={(e) => setManual({ ...manual, location: e.target.value })}
                 />
               </label>
-              <label className="text-sm sm:col-span-2">
+              <label className="text-sm">
                 <span className="mb-1 block font-medium text-foreground">Email</span>
                 <input
                   type="email"
@@ -271,7 +277,15 @@ export function ImportPage() {
                   onChange={(e) => setManual({ ...manual, email: e.target.value })}
                 />
               </label>
-              <div className="flex items-end gap-3 sm:col-span-1">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Phone</span>
+                <input
+                  className={field}
+                  value={manual.phone}
+                  onChange={(e) => setManual({ ...manual, phone: e.target.value })}
+                />
+              </label>
+              <div className="flex items-end gap-3">
                 <Button type="submit" size="sm" disabled={!manualValid || stage.isPending}>
                   {stage.isPending ? "Staging…" : "Stage entry"}
                 </Button>

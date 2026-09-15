@@ -230,6 +230,7 @@ function NewOfficialForm({
   const [department, setDepartment] = useState("");
   const [location, setLocation] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [unitId, setUnitId] = useState("");
 
   const submit = (e: FormEvent) => {
@@ -241,6 +242,7 @@ function NewOfficialForm({
       department: department || null,
       location: location || null,
       email: email || null,
+      phone: phone || null,
       organization_unit_id: unitId ? Number(unitId) : null,
     });
   };
@@ -301,6 +303,14 @@ function NewOfficialForm({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+        />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block font-medium text-foreground">Phone</span>
+        <input
+          className={input}
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
         />
       </label>
       <label className="text-sm">

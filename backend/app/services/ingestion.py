@@ -27,6 +27,10 @@ from ..services.officials import recompute_verification
 _ALIASES: dict[str, set[str]] = {
     "name": {"name", "officialname", "fullname", "contactname", "person"},
     "email": {"email", "emailid", "mail", "officialemail", "eemail"},
+    "phone": {
+        "phone", "phonenumber", "mobile", "mobilenumber", "mobileno",
+        "contactnumber", "contactno", "cellnumber", "telephone",
+    },
     "designation": {"designation", "title", "post", "role"},
     "department": {"department", "dept", "vertical"},
     "level": {"level", "orglevel", "grade", "band"},
@@ -36,7 +40,10 @@ _ALIASES: dict[str, set[str]] = {
         "branch", "lho", "rbo", "ao", "circle",
     },
 }
-_FILLABLE = ("email", "designation", "department", "level", "location", "organization_unit_id")
+_FILLABLE = (
+    "email", "phone", "designation", "department", "level", "location",
+    "organization_unit_id",
+)
 
 
 def _key(header: str) -> str:
@@ -236,6 +243,7 @@ def commit_import(db: Session, data_import: DataImport, *, actor_id: int | None)
         unit_id = _unit_id(db, norm.get("unit"))
         values = {
             "email": norm.get("email"),
+            "phone": norm.get("phone"),
             "designation": norm.get("designation"),
             "department": norm.get("department"),
             "level": norm.get("level"),

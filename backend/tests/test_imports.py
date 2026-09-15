@@ -165,3 +165,22 @@ def test_upload_requires_editor_role(client, make_user, login):
         files={"file": ("x.csv", b"Name\nSomeone\n", "text/csv")},
     )
     assert resp.status_code == 403
+
+
+def test_phone_column_is_recognised_and_committed(client, make_user, login):
+    _admin(make_user, login)
+    csv = (
+        "Name,Phone Number,Email\n"
+        "Ravi Menon,98765 43210,ravi.menon@partner.example\n"
+    )
+    staged = client.post(
+        "/api/v1/imports", json={"filename": "phones.csv", "csv_text": csv}
+    ).json()
+
+    preview = client.get(f"/api/v1/imports/{staged['id']}/preview").json()
+    assert preview["rows"][0]["normalized"]["phone"] == "98765 43210"
+    assert preview["samples"][0]["writes"]["phone"] == "98765 43210"
+
+    client.post(f"/api/v1/imports/{staged['id']}/commit")
+    officials = client.get("/api/v1/officials", params={"q": "Ravi Menon"}).json()
+    assert officials["items"][0]["phone"] == "98765 43210"
