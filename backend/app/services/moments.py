@@ -19,7 +19,7 @@ from ..models.official import FieldVerification
 from ..models.official_date import DateKind, OfficialDate
 from ..models.organization_unit import OrganizationUnit
 from ..models.relationship import Relationship, RelationshipStatus
-from ..services import audit
+from ..services import audit, llm
 from ..services.scoring import band
 
 settings = get_settings()
@@ -269,10 +269,39 @@ def _unit_name(db: Session, official) -> str:
     return official.location or "their office"
 
 
-def build_draft(db: Session, moment: EngagementMoment, sender_name: str | None) -> str:
-    official = moment.official
+_DRAFT_SYSTEM = (
+    "You write a short outreach message for a relationship manager to send to "
+    "a business contact, for the given occasion. It is a real message FROM the "
+    "sender TO the official named in the data - not a note to the sender "
+    "themselves, and not a description of what to do. Personalise it using "
+    "only the concrete facts given (e.g. designation, unit, recent contact) - "
+    "never invent a fact that isn't in the data. Keep it courteous and warm, "
+    "never a sales pitch or business ask, 3-5 sentences, and sign off with the "
+    "sender's name on its own line. For an 'inactivity' occasion, write a "
+    "genuine check-in note (not a birthday/anniversary greeting) that opens the "
+    "door to reconnect without pressure. Reply with ONLY the message text - no "
+    "subject line, no explanation, no markdown."
+)
+
+
+def _llm_draft(db: Session, moment: EngagementMoment, official, sender: str) -> str | None:
+    import json
+
+    context = {
+        "occasion": moment.type.value,
+        "official_name": official.name,
+        "official_designation": official.designation,
+        "unit": _unit_name(db, official),
+        "sender_name": sender,
+        "evidence": moment.evidence,
+    }
+    return llm.chat(_DRAFT_SYSTEM, json.dumps(context, default=str))
+
+
+def _static_draft(db: Session, moment: EngagementMoment, official, sender: str) -> str:
+    """Deterministic fallback used when no LLM endpoint is configured, or the
+    call fails - so drafting never blocks on the endpoint being up."""
     name = official.name
-    sender = sender_name or "the team"
     designation = official.designation or "the new role"
 
     if moment.type is MomentType.PROMOTION:
@@ -293,9 +322,16 @@ def build_draft(db: Session, moment: EngagementMoment, sender_name: str | None) 
             f"service. Thank you for your continued support.\n\n"
             f"Best regards,\n{sender}"
         )
-    days = moment.evidence.get("days_since_last_interaction", "")
     return (
-        f"Suggested check-in: it has been {days} days since the last contact with "
-        f"{name} at {_unit_name(db, official)}. A brief, non-sales courtesy note or "
-        f"call would help keep the relationship warm."
+        f"Dear {name},\n\nIt has been a while since we last connected - hope "
+        f"things are going well at {_unit_name(db, official)}. Would be great "
+        f"to catch up whenever you have a few minutes.\n\nBest regards,\n{sender}"
+    )
+
+
+def build_draft(db: Session, moment: EngagementMoment, sender_name: str | None) -> str:
+    official = moment.official
+    sender = sender_name or "the team"
+    return _llm_draft(db, moment, official, sender) or _static_draft(
+        db, moment, official, sender
     )
