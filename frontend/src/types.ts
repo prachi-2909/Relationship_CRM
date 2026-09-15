@@ -286,11 +286,19 @@ export type Sentiment = "positive" | "neutral" | "negative" | "unknown";
 export const INTERACTION_TYPES: InteractionType[] = ["email", "call", "meeting", "note"];
 export const DIRECTIONS: Direction[] = ["inbound", "outbound", "internal"];
 
+export interface RelationMention {
+  from: string;
+  to: string;
+  type: ConnectionType;
+  evidence?: string;
+}
+
 export interface InteractionStructured {
   topics?: string[];
   commitments?: string[];
   requests?: string[];
   people?: string[];
+  relations?: RelationMention[];
 }
 
 export interface InteractionSummary {

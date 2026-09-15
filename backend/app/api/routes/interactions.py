@@ -41,6 +41,7 @@ def _apply_extraction(interaction: Interaction) -> None:
         "commitments": result.commitments,
         "requests": result.requests,
         "people": result.people,
+        "relations": [r.model_dump(by_alias=True) for r in result.relations],
     }
     interaction.ai_summary = result.summary
     interaction.ai_structured = payload
@@ -240,6 +241,7 @@ def reprocess_interaction(
         "commitments": result.commitments,
         "requests": result.requests,
         "people": result.people,
+        "relations": [r.model_dump(by_alias=True) for r in result.relations],
     }
     interaction.ai_model = result.model
 

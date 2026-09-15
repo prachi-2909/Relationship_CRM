@@ -31,6 +31,22 @@ from ..models.interaction import Sentiment
 settings = get_settings()
 
 
+class RelationMention(BaseModel):
+    """A relationship between two named people, stated in the note.
+
+    ``from_`` / ``to`` are person names (never pronouns). Direction:
+    reports_to -> from is the subordinate; introduced_by -> from is the person
+    who was introduced, to is the introducer; works_with is symmetric.
+    """
+
+    from_: str = Field(alias="from")
+    to: str
+    type: str  # reports_to | works_with | introduced_by
+    evidence: str = ""
+
+    model_config = {"populate_by_name": True}
+
+
 class ExtractionResult(BaseModel):
     summary: str = ""
     sentiment: Sentiment = Sentiment.UNKNOWN
@@ -38,6 +54,7 @@ class ExtractionResult(BaseModel):
     commitments: list[str] = Field(default_factory=list)
     requests: list[str] = Field(default_factory=list)
     people: list[str] = Field(default_factory=list)
+    relations: list[RelationMention] = Field(default_factory=list)
     model: str = "stub"
 
 
@@ -63,6 +80,37 @@ _REQUEST_HINTS = (
 _HONORIFICS = re.compile(
     r"\b(?:Mr\.?|Mrs\.?|Ms\.?|Shri|Smt\.?|Dr\.?|Sri)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})"
 )
+
+# a person name for the relation patterns: 1-3 capitalised words, optional
+# honorific. NOT case-insensitive - the capitalisation is what anchors a name.
+_N = r"(?:(?:Mr|Mrs|Ms|Shri|Smt|Dr|Sri)\.?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})"
+# each: (compiled pattern, which group is `from`, which is `to`, type)
+_RELATION_PATTERNS = [
+    (re.compile(rf"{_N}\s+reports?\s+(?:directly\s+)?to\s+{_N}"), 1, 2, "reports_to"),
+    (
+        re.compile(
+            rf"{_N}(?:'s|s'|s)?\s+(?:reporting\s+)?(?:manager|boss|supervisor|team\s+lead|reporting\s+manager)\s+(?:is\s+)?{_N}"
+        ),
+        1, 2, "reports_to",
+    ),
+    (
+        re.compile(rf"{_N}\s+(?:manages|heads\s+up|line-?manages)\s+{_N}"),
+        2, 1, "reports_to",
+    ),
+    (
+        re.compile(
+            rf"{_N}\s+(?:introduced|connected)\s+(?:us|me|the\s+team|our\s+team)\s+(?:to|with)\s+{_N}"
+        ),
+        2, 1, "introduced_by",
+    ),
+    (
+        re.compile(
+            rf"(?:introduced|connected)\s+(?:to|with)\s+{_N}\s+(?:by|through|via)\s+{_N}"
+        ),
+        1, 2, "introduced_by",
+    ),
+    (re.compile(rf"{_N}\s+works?\s+(?:closely\s+)?with\s+{_N}"), 1, 2, "works_with"),
+]
 _STOPWORDS = {
     "the", "and", "for", "with", "that", "this", "from", "have", "been", "will",
     "your", "our", "was", "were", "are", "not", "but", "they", "them", "their",
@@ -73,6 +121,24 @@ _STOPWORDS = {
 def _sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.!?।])\s+|\n+", text.strip())
     return [p.strip() for p in parts if p.strip()]
+
+
+def _stub_relations(text: str) -> list[RelationMention]:
+    out: list[RelationMention] = []
+    seen: set[tuple[str, str, str]] = set()
+    for pattern, gf, gt, rtype in _RELATION_PATTERNS:
+        for m in pattern.finditer(text):
+            a, b = m.group(gf).strip(), m.group(gt).strip()
+            if a.lower() == b.lower():
+                continue
+            key = (a.lower(), b.lower(), rtype)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                RelationMention(**{"from": a, "to": b, "type": rtype, "evidence": m.group(0).strip()[:180]})
+            )
+    return out[:8]
 
 
 def _stub_extract(text: str) -> ExtractionResult:
@@ -113,6 +179,12 @@ def _stub_extract(text: str) -> ExtractionResult:
         freq[token] = freq.get(token, 0) + 1
     topics = [w for w, _ in sorted(freq.items(), key=lambda kv: -kv[1])[:5]]
 
+    relations = _stub_relations(text)
+    for r in relations:  # make sure both endpoints show up in people
+        for nm in (r.from_, r.to):
+            if nm not in people:
+                people.append(nm)
+
     return ExtractionResult(
         summary=summary,
         sentiment=sentiment,
@@ -120,6 +192,7 @@ def _stub_extract(text: str) -> ExtractionResult:
         commitments=commitments[:8],
         requests=requests[:8],
         people=people[:8],
+        relations=relations,
         model="stub",
     )
 
@@ -131,8 +204,17 @@ _SYSTEM_PROMPT = (
     "English), sentiment (one of positive/neutral/negative/unknown), topics (array "
     "of short strings), commitments (array of strings - things someone said they "
     "will do), requests (array of strings - things someone asked for), people "
-    "(array of person names mentioned). Keep quoted phrases in their original "
-    "language; write summary and topics in English."
+    "(array of person names mentioned), relations (array of objects describing a "
+    "relationship BETWEEN TWO NAMED PEOPLE that the note states or clearly implies). "
+    'Each relation object is {"from": name, "to": name, "type": one of '
+    '"reports_to" | "works_with" | "introduced_by", "evidence": the phrase that '
+    'implies it}. For "reports_to", from is the subordinate and to is the manager. '
+    'For "introduced_by", from is the person who was introduced and to is the '
+    'introducer. "works_with" is symmetric - use it only when the note actually '
+    "says they collaborate, not merely because both are mentioned. Use real names "
+    "only, never pronouns; omit a relation if either side is not a named person. "
+    "Keep quoted phrases in their original language; write summary and topics in "
+    "English."
 )
 
 
@@ -169,8 +251,32 @@ def _llm_extract(text: str, interaction_type: str) -> ExtractionResult:
         commitments=[str(x) for x in data.get("commitments", [])][:12],
         requests=[str(x) for x in data.get("requests", [])][:12],
         people=[str(x) for x in data.get("people", [])][:12],
+        relations=_coerce_relations(data.get("relations")),
         model=settings.llm_model,
     )
+
+
+_REL_TYPES = {"reports_to", "works_with", "introduced_by"}
+
+
+def _coerce_relations(value: object) -> list[RelationMention]:
+    if not isinstance(value, list):
+        return []
+    out: list[RelationMention] = []
+    for item in value[:16]:
+        if not isinstance(item, dict):
+            continue
+        a = str(item.get("from") or item.get("from_") or "").strip()
+        b = str(item.get("to") or "").strip()
+        t = str(item.get("type") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if not a or not b or a.lower() == b.lower() or t not in _REL_TYPES:
+            continue
+        out.append(
+            RelationMention(
+                **{"from": a, "to": b, "type": t, "evidence": str(item.get("evidence") or "")[:200]}
+            )
+        )
+    return out
 
 
 def _coerce_sentiment(value: object) -> Sentiment:

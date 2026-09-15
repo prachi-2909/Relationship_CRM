@@ -215,29 +215,90 @@ def resolve_name(db: Session, raw_name: str) -> tuple[Official | None, int]:
     return None, 0
 
 
-def suggest_from_interaction(db: Session, interaction: Interaction) -> int:
-    """From the names the extractor pulled, propose ``works_with`` edges between
-    every pair of resolvable officials (including this interaction's own
-    official). Returns the number of new suggestions created."""
-    structured = interaction.structured or {}
-    names = list(structured.get("people") or [])
-    if not names:  # fall back to raw model output if the effective field is bare
-        names = list((interaction.ai_structured or {}).get("people") or [])
+_TYPE_ALIASES = {
+    "reports_to": ConnectionType.REPORTS_TO,
+    "manager": ConnectionType.REPORTS_TO,
+    "works_with": ConnectionType.WORKS_WITH,
+    "colleague": ConnectionType.WORKS_WITH,
+    "peer": ConnectionType.WORKS_WITH,
+    "introduced_by": ConnectionType.INTRODUCED_BY,
+    "introduction": ConnectionType.INTRODUCED_BY,
+}
+_MIN_RESOLVE_CONF = 70
 
+
+def _field(interaction: Interaction, key: str) -> list:
+    """Prefer the effective ``structured`` field, fall back to raw model output."""
+    val = (interaction.structured or {}).get(key)
+    if not val:
+        val = (interaction.ai_structured or {}).get(key)
+    return list(val or [])
+
+
+def suggest_from_interaction(db: Session, interaction: Interaction) -> int:
+    """Propose edges from what the extractor pulled out of one interaction:
+
+    * typed ``relations`` ("X reports to Y", "Z introduced us to W") become
+      typed suggested edges, and
+    * any remaining pairs of co-mentioned officials become suggested
+      ``works_with`` edges.
+
+    Only edges between two resolvable, distinct officials are created. Returns
+    the number of new suggestions.
+    """
+    created = 0
+    typed_pairs: set[frozenset[int]] = set()
+
+    # 1. typed relations
+    for rel in _field(interaction, "relations"):
+        if not isinstance(rel, dict):
+            continue
+        ctype = _TYPE_ALIASES.get(
+            str(rel.get("type") or "").strip().lower().replace(" ", "_")
+        )
+        a_off, ac = resolve_name(db, str(rel.get("from") or rel.get("from_") or ""))
+        b_off, bc = resolve_name(db, str(rel.get("to") or ""))
+        if (
+            ctype is None
+            or a_off is None
+            or b_off is None
+            or a_off.id == b_off.id
+            or min(ac, bc) < _MIN_RESOLVE_CONF
+        ):
+            continue
+        evidence = str(rel.get("evidence") or "").strip()[:180]
+        source = f"Extracted from interaction #{interaction.id}"
+        if evidence:
+            source += f': "{evidence}"'
+        _, was_new = upsert(
+            db,
+            from_id=a_off.id,
+            to_id=b_off.id,
+            type_=ctype,
+            source=source,
+            status=ConnectionStatus.SUGGESTED,
+            source_interaction_id=interaction.id,
+            confidence=min(ac, bc),
+        )
+        created += int(was_new)
+        typed_pairs.add(frozenset({a_off.id, b_off.id}))
+
+    # 2. co-mention -> works_with, skipping pairs a typed relation already covers
     resolved: dict[int, Official] = {}
     if interaction.official_id:
         owner = db.get(Official, interaction.official_id)
         if owner is not None:
             resolved[owner.id] = owner
-    for nm in names:
-        off, conf = resolve_name(db, nm)
-        if off is not None and conf >= 70:
+    for nm in _field(interaction, "people"):
+        off, conf = resolve_name(db, str(nm))
+        if off is not None and conf >= _MIN_RESOLVE_CONF:
             resolved.setdefault(off.id, off)
 
     ids = sorted(resolved)
-    created = 0
     for i, a in enumerate(ids):
         for b in ids[i + 1 :]:
+            if frozenset({a, b}) in typed_pairs:
+                continue
             _, was_new = upsert(
                 db,
                 from_id=a,

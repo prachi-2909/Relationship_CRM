@@ -164,3 +164,78 @@ def test_dismiss_then_recreate_keeps_one_row(client, make_user, login):
     assert again.json()["id"] == created["id"]
     g = client.get(f"/api/v1/officials/{a}/connections").json()
     assert len(g["confirmed"]) == 1
+
+
+def test_typed_relation_reports_to_extracted_from_interaction(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    adarsh = _official(client, "Adarsh Giri", "DGM")
+    sunil = _official(client, "Sunil Verma", "GM")
+    rel = _rel(client, adarsh)
+
+    client.post(
+        "/api/v1/interactions",
+        json={
+            "relationship_id": rel,
+            "type": "call",
+            "raw_notes": "Adarsh Giri reports to Sunil Verma on the new vertical.",
+        },
+    )
+
+    g = client.get(f"/api/v1/officials/{adarsh}/connections").json()
+    # exactly one suggested edge for this pair: the typed reports_to, not also
+    # a generic works_with from the co-mention fallback
+    assert len(g["suggested"]) == 1
+    edge = g["suggested"][0]
+    assert edge["official_id"] == sunil
+    assert edge["type"] == "reports_to"
+    assert edge["direction"] == "outgoing"
+    assert edge["label"] == "reports to Sunil Verma"
+    assert "interaction" in edge["source"].lower()
+    assert "reports to Sunil Verma" in edge["source"]
+
+
+def test_typed_relation_introduced_by_direction(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    adarsh = _official(client, "Adarsh Giri")
+    prachi = _official(client, "Prachi Sundaram")
+    rel = _rel(client, adarsh)
+
+    client.post(
+        "/api/v1/interactions",
+        json={
+            "relationship_id": rel,
+            "type": "meeting",
+            "raw_notes": "Prachi Sundaram introduced us to Adarsh Giri at the summit.",
+        },
+    )
+
+    g = client.get(f"/api/v1/officials/{adarsh}/connections").json()
+    assert len(g["suggested"]) == 1
+    edge = g["suggested"][0]
+    assert edge["official_id"] == prachi
+    assert edge["type"] == "introduced_by"
+    # Adarsh's side: he was introduced by Prachi
+    assert edge["label"] == "introduced by Prachi Sundaram"
+
+    # from Prachi's side, the same edge reads the other way
+    gp = client.get(f"/api/v1/officials/{prachi}/connections").json()
+    assert gp["suggested"][0]["label"] == "introduced us to Adarsh Giri"
+
+
+def test_typed_relation_ignored_when_a_name_does_not_resolve(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    adarsh = _official(client, "Adarsh Giri")
+    rel = _rel(client, adarsh)
+
+    # "Sunil Verma" is not a known official -> no edge, and it must not crash
+    resp = client.post(
+        "/api/v1/interactions",
+        json={
+            "relationship_id": rel,
+            "type": "call",
+            "raw_notes": "Adarsh Giri reports to Sunil Verma on the new vertical.",
+        },
+    )
+    assert resp.status_code == 201
+    g = client.get(f"/api/v1/officials/{adarsh}/connections").json()
+    assert g["suggested"] == []

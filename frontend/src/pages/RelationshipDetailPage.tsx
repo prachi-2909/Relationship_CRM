@@ -17,6 +17,7 @@ import {
   type Direction,
   type InteractionDetail,
   type InteractionListResponse,
+  type InteractionStructured,
   type InteractionType,
   type RelationshipBrief,
   type RelationshipDetail,
@@ -732,13 +733,28 @@ function StructuredList({
   canEdit,
   onAddTask,
 }: {
-  data: { topics?: string[]; commitments?: string[]; requests?: string[]; people?: string[] } | null;
+  data: InteractionStructured | null;
   canEdit: boolean;
   onAddTask: (title: string) => void;
 }) {
   if (!data) return <p className="mt-1 text-muted-foreground">—</p>;
   return (
     <div className="mt-1 space-y-2 text-xs">
+      {data.relations && data.relations.length > 0 && (
+        <div>
+          <div className="font-medium text-foreground">Relationships</div>
+          <ul className="mt-0.5 space-y-0.5 text-muted-foreground">
+            {data.relations.map((r, i) => (
+              <li key={i}>
+                {r.from} → <span className="italic">{r.type.replace("_", " ")}</span> → {r.to}
+                <span className="ml-1 text-muted-foreground/60">
+                  (suggested — confirm on the official's page)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {data.commitments && data.commitments.length > 0 && (
         <div>
           <div className="font-medium text-foreground">Commitments</div>
