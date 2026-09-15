@@ -11,13 +11,16 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // FormData (file uploads) must NOT get a manual Content-Type — the browser
+  // sets one with the correct multipart boundary.
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const response = await fetch(BASE + path, {
     credentials: "include",
+    ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers ?? {}),
     },
-    ...options,
   });
 
   if (!response.ok) {

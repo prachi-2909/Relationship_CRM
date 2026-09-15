@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Badge } from "../components/Badge";
+import { Button, inputClass } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
@@ -14,14 +15,34 @@ const SAMPLE_CSV =
   "Name,Level,Designation,Department,Location,Email\n" +
   "Ashok Nair,AGM,Assistant General Manager,Partnerships,Mumbai,ashok.nair@partner.example\n";
 
+const INGEST_MODES = ["paste", "upload", "manual"] as const;
+type IngestMode = (typeof INGEST_MODES)[number];
+const MODE_LABEL: Record<IngestMode, string> = {
+  paste: "Paste CSV",
+  upload: "Upload file",
+  manual: "Add manually",
+};
+
+/** Quote a CSV field only when it needs it (comma, quote, or newline inside). */
+function csvField(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 export function ImportPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const canUpload = isAdmin || user?.role === "relationship_manager";
   const queryClient = useQueryClient();
 
+  const [mode, setMode] = useState<IngestMode>("paste");
   const [filename, setFilename] = useState("officials.csv");
   const [csvText, setCsvText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [manual, setManual] = useState({
+    name: "", designation: "", level: "", department: "", unit: "",
+    location: "", email: "",
+  });
   const [activeId, setActiveId] = useState<number | null>(null);
 
   const listQuery = useQuery({
@@ -34,18 +55,48 @@ export function ImportPage() {
     enabled: activeId !== null,
   });
 
+  const onStaged = (created: ImportSummary) => {
+    queryClient.invalidateQueries({ queryKey: ["imports"] });
+    setActiveId(created.id);
+  };
+
   const stage = useMutation({
-    mutationFn: () =>
+    mutationFn: (vars: { filename: string; csv_text: string }) =>
       api<ImportSummary>("/imports", {
         method: "POST",
-        body: JSON.stringify({ filename, csv_text: csvText }),
+        body: JSON.stringify(vars),
       }),
     onSuccess: (created) => {
-      queryClient.invalidateQueries({ queryKey: ["imports"] });
-      setActiveId(created.id);
+      onStaged(created);
       setCsvText("");
+      setManual({ name: "", designation: "", level: "", department: "", unit: "", location: "", email: "" });
     },
   });
+
+  const upload = useMutation({
+    mutationFn: (f: File) => {
+      const body = new FormData();
+      body.append("file", f);
+      return api<ImportSummary>("/imports/upload", { method: "POST", body });
+    },
+    onSuccess: (created) => {
+      onStaged(created);
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+  });
+
+  const submitManual = (e: FormEvent) => {
+    e.preventDefault();
+    const headers = ["Name", "Designation", "Level", "Department", "Unit", "Location", "Email"];
+    const row = [
+      manual.name, manual.designation, manual.level, manual.department,
+      manual.unit, manual.location, manual.email,
+    ];
+    const csv_text =
+      headers.map(csvField).join(",") + "\n" + row.map(csvField).join(",") + "\n";
+    stage.mutate({ filename: "manual-entry.csv", csv_text });
+  };
 
   const commit = useMutation({
     mutationFn: (id: number) => api(`/imports/${id}/commit`, { method: "POST" }),
@@ -63,51 +114,175 @@ export function ImportPage() {
     },
   });
 
-  const field =
-    "rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+  const field = inputClass;
   const preview = previewQuery.data;
+  const manualValid = manual.name.trim().length > 0;
 
   return (
     <div>
       <h1 className="font-heading text-xl font-bold text-foreground">Data Ingestion</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Paste CSV of officials. It is validated and resolved against existing
-        records; nothing is written until an admin commits.
+        Bring in officials however the data comes to you — a pasted CSV, an
+        uploaded CSV/Excel file, or one person at a time. Every path lands in
+        the same review queue: validated and resolved against existing
+        records, nothing written until an admin commits.
       </p>
 
       {canUpload && (
         <div className="mt-4 rounded-lg border border-border bg-card shadow-sm p-4">
-          <input
-            className={`${field} mb-2 w-64`}
-            value={filename}
-            onChange={(e) => setFilename(e.target.value)}
-          />
-          <textarea
-            className={`${field} w-full font-mono text-xs`}
-            rows={6}
-            placeholder={SAMPLE_CSV}
-            value={csvText}
-            onChange={(e) => setCsvText(e.target.value)}
-          />
-          <div className="mt-2 flex items-center gap-3">
-            <button
-              disabled={!csvText.trim() || stage.isPending}
-              onClick={() => stage.mutate()}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-50"
-            >
-              {stage.isPending ? "Staging…" : "Stage import"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCsvText(SAMPLE_CSV)}
-              className="text-xs text-muted-foreground hover:underline"
-            >
-              Use example
-            </button>
-            {stage.error instanceof ApiError && (
-              <span className="text-sm text-destructive">{stage.error.message}</span>
-            )}
+          <div className="mb-3 inline-flex rounded-md border border-border p-0.5 text-xs">
+            {INGEST_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`rounded px-2.5 py-1 font-medium ${
+                  mode === m
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {MODE_LABEL[m]}
+              </button>
+            ))}
           </div>
+
+          {mode === "paste" && (
+            <>
+              <input
+                className={`${field} mb-2 w-64`}
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+              />
+              <textarea
+                className={`${field} w-full font-mono text-xs`}
+                rows={6}
+                placeholder={SAMPLE_CSV}
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+              />
+              <div className="mt-2 flex items-center gap-3">
+                <Button
+                  size="sm"
+                  disabled={!csvText.trim() || stage.isPending}
+                  onClick={() => stage.mutate({ filename, csv_text: csvText })}
+                >
+                  {stage.isPending ? "Staging…" : "Stage import"}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setCsvText(SAMPLE_CSV)}
+                  className="text-xs text-muted-foreground hover:underline"
+                >
+                  Use example
+                </button>
+                {stage.error instanceof ApiError && (
+                  <span className="text-sm text-destructive">{stage.error.message}</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {mode === "upload" && (
+            <>
+              <p className="mb-2 text-xs text-muted-foreground">
+                .csv, .xlsx or .xlsm — headers are matched loosely (e.g. "Org Level",
+                "Grade" and "Level" all resolve to the same field).
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xlsm"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-primary-foreground hover:file:bg-secondary"
+              />
+              <div className="mt-2 flex items-center gap-3">
+                <Button
+                  size="sm"
+                  disabled={!file || upload.isPending}
+                  onClick={() => file && upload.mutate(file)}
+                >
+                  {upload.isPending ? "Uploading…" : "Upload & stage"}
+                </Button>
+                {upload.error instanceof ApiError && (
+                  <span className="text-sm text-destructive">{upload.error.message}</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {mode === "manual" && (
+            <form onSubmit={submitManual} className="grid gap-3 sm:grid-cols-3">
+              <label className="text-sm sm:col-span-1">
+                <span className="mb-1 block font-medium text-foreground">Name</span>
+                <input
+                  className={field}
+                  required
+                  value={manual.name}
+                  onChange={(e) => setManual({ ...manual, name: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Designation</span>
+                <input
+                  className={field}
+                  value={manual.designation}
+                  onChange={(e) => setManual({ ...manual, designation: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Level</span>
+                <input
+                  className={field}
+                  value={manual.level}
+                  onChange={(e) => setManual({ ...manual, level: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Department</span>
+                <input
+                  className={field}
+                  value={manual.department}
+                  onChange={(e) => setManual({ ...manual, department: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Unit / office</span>
+                <input
+                  className={field}
+                  value={manual.unit}
+                  onChange={(e) => setManual({ ...manual, unit: e.target.value })}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-foreground">Location</span>
+                <input
+                  className={field}
+                  value={manual.location}
+                  onChange={(e) => setManual({ ...manual, location: e.target.value })}
+                />
+              </label>
+              <label className="text-sm sm:col-span-2">
+                <span className="mb-1 block font-medium text-foreground">Email</span>
+                <input
+                  type="email"
+                  className={field}
+                  value={manual.email}
+                  onChange={(e) => setManual({ ...manual, email: e.target.value })}
+                />
+              </label>
+              <div className="flex items-end gap-3 sm:col-span-1">
+                <Button type="submit" size="sm" disabled={!manualValid || stage.isPending}>
+                  {stage.isPending ? "Staging…" : "Stage entry"}
+                </Button>
+              </div>
+              {stage.error instanceof ApiError && (
+                <span className="text-sm text-destructive sm:col-span-3">
+                  {stage.error.message}
+                </span>
+              )}
+            </form>
+          )}
         </div>
       )}
 

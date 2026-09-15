@@ -101,3 +101,67 @@ def test_relationship_manager_cannot_commit(client, make_user, login):
 
     login("admin@example.com", "secret123")
     assert client.post(f"/api/v1/imports/{di['id']}/commit").status_code == 200
+
+
+def test_upload_csv_stages_rows(client, make_user, login):
+    _admin(make_user, login)
+    resp = client.post(
+        "/api/v1/imports/upload",
+        files={"file": ("team.csv", CSV.encode("utf-8"), "text/csv")},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["filename"] == "team.csv"
+    assert body["row_count"] == 4
+    assert body["accepted_count"] == 2
+
+
+def test_upload_xlsx_stages_rows(client, make_user, login):
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    _admin(make_user, login)
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Name", "Level", "Designation", "Email"])
+    ws.append(["Meena Pillai", "AGM", "Assistant General Manager", "meena@partner.example"])
+    buf = BytesIO()
+    wb.save(buf)
+
+    resp = client.post(
+        "/api/v1/imports/upload",
+        files={
+            "file": (
+                "team.xlsx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["row_count"] == 1
+    assert body["accepted_count"] == 1
+
+    preview = client.get(f"/api/v1/imports/{body['id']}/preview").json()
+    assert preview["rows"][0]["normalized"]["name"] == "Meena Pillai"
+
+
+def test_upload_rejects_unsupported_extension(client, make_user, login):
+    _admin(make_user, login)
+    resp = client.post(
+        "/api/v1/imports/upload",
+        files={"file": ("team.txt", b"Name\nSomeone\n", "text/plain")},
+    )
+    assert resp.status_code == 415
+
+
+def test_upload_requires_editor_role(client, make_user, login):
+    make_user(email="viewer@example.com", password="secret123", role=Role.APPROVER_VIEWER)
+    login("viewer@example.com", "secret123")
+    resp = client.post(
+        "/api/v1/imports/upload",
+        files={"file": ("x.csv", b"Name\nSomeone\n", "text/csv")},
+    )
+    assert resp.status_code == 403
