@@ -1,7 +1,7 @@
 """Organisation units and their configurable types."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...db import get_db
@@ -71,6 +71,44 @@ def _require_active_type(db: Session, type_code: str) -> OrgUnitType:
     if unit_type is None or not unit_type.active:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown unit type")
     return unit_type
+
+
+def _validate_hierarchy(db: Session, type_code: str, parent_id: int | None) -> None:
+    """A unit's type must sit strictly below its parent's type in `rank`
+    (lower rank = higher in the org - Corporate Centre 10, Branch 50, etc.).
+    A level may be skipped (e.g. a Branch directly under an LHO), but the
+    direction can't be wrong, and only the topmost type may be rootless."""
+    # OrgUnitType's primary key is `id`, not `code` - db.get() needs a lookup
+    # by the unique `code` column instead.
+    child_type = db.scalar(select(OrgUnitType).where(OrgUnitType.code == type_code))
+    if child_type is None:  # already 422'd by _require_active_type upstream
+        return
+
+    if parent_id is None:
+        top_rank = db.scalar(
+            select(func.min(OrgUnitType.rank)).where(OrgUnitType.active.is_(True))
+        )
+        if child_type.rank != top_rank:
+            top_type = db.scalar(
+                select(OrgUnitType).where(OrgUnitType.rank == top_rank)
+            )
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Only a {top_type.label if top_type else 'top-level'} unit can be "
+                "created without a parent",
+            )
+        return
+
+    parent = db.get(OrganizationUnit, parent_id)
+    if parent is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Parent unit not found")
+    parent_type = db.scalar(select(OrgUnitType).where(OrgUnitType.code == parent.type_code))
+    if parent_type is not None and child_type.rank <= parent_type.rank:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"A {child_type.label} cannot be placed under a {parent_type.label} - "
+            f"{parent_type.label} is not above {child_type.label} in the hierarchy",
+        )
 
 
 def _descendant_ids(db: Session, root_id: int) -> set[int]:
@@ -151,8 +189,7 @@ def create_unit(
     actor: User = Depends(require_roles(Role.ADMIN)),
 ):
     _require_active_type(db, payload.type_code)
-    if payload.parent_id is not None and db.get(OrganizationUnit, payload.parent_id) is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Parent unit not found")
+    _validate_hierarchy(db, payload.type_code, payload.parent_id)
 
     unit = OrganizationUnit(
         name=payload.name,
@@ -200,8 +237,13 @@ def update_unit(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot move a unit under itself"
             )
-        if db.get(OrganizationUnit, new_parent) is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Parent unit not found")
+
+    if "type_code" in data or "parent_id" in data:
+        _validate_hierarchy(
+            db,
+            data.get("type_code", unit.type_code),
+            data["parent_id"] if "parent_id" in data else unit.parent_id,
+        )
 
     if data.get("status") == OrgUnitStatus.ARCHIVED:
         active_children = db.scalar(
