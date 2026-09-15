@@ -26,18 +26,18 @@ export function OfficialsPage() {
   const canEdit = user?.role === "admin" || user?.role === "relationship_manager";
 
   const [q, setQ] = useState("");
-  const [level, setLevel] = useState("");
+  const [unitId, setUnitId] = useState("");
   const [verification, setVerification] = useState<VerificationStatus | "">("");
   const [offset, setOffset] = useState(0);
   const [showForm, setShowForm] = useState(false);
 
   const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
   if (q) params.set("q", q);
-  if (level) params.set("level", level);
+  if (unitId) params.set("unit_id", unitId);
   if (verification) params.set("verification_status", verification);
 
   const listQuery = useQuery({
-    queryKey: ["officials", q, level, verification, offset],
+    queryKey: ["officials", q, unitId, verification, offset],
     queryFn: () => api<OfficialListResponse>(`/officials?${params.toString()}`),
   });
   const unitsQuery = useQuery({
@@ -94,15 +94,21 @@ export function OfficialsPage() {
             setOffset(0);
           }}
         />
-        <input
+        <select
           className={input}
-          placeholder="Level"
-          value={level}
+          value={unitId}
           onChange={(e) => {
-            setLevel(e.target.value);
+            setUnitId(e.target.value);
             setOffset(0);
           }}
-        />
+        >
+          <option value="">Any unit</option>
+          {(unitsQuery.data ?? []).map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
         <select
           className={input}
           value={verification}
