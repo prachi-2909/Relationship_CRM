@@ -3,6 +3,7 @@
 from .audit import AuditLog
 from .base import Base, TimestampMixin
 from .connection import Connection, ConnectionStatus, ConnectionType
+from .conversation import AskConversation, AskMessage, MessageRole
 from .data_import import DataImport, ImportRow, ImportStatus, RowAction
 from .engagement_moment import EngagementMoment, MomentStatus, MomentType
 from .interaction import Direction, Interaction, InteractionType, Sentiment
@@ -68,4 +69,7 @@ __all__ = [
     "Connection",
     "ConnectionType",
     "ConnectionStatus",
+    "AskConversation",
+    "AskMessage",
+    "MessageRole",
 ]

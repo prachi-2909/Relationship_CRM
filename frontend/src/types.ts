@@ -524,6 +524,7 @@ export interface AskConsidered {
 }
 
 export interface AskResponse {
+  conversation_id: number;
   answer: string;
   generated_by: string;
   scope: "targeted" | "portfolio";

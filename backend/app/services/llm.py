@@ -301,11 +301,21 @@ def _json_blob(content: str) -> str:
     return text
 
 
-def chat(system: str, user: str, *, temperature: float = 0.2) -> str | None:
+def chat(
+    system: str,
+    user: str,
+    *,
+    temperature: float = 0.2,
+    history: list[dict] | None = None,
+) -> str | None:
     """Free-form completion via the configured OpenAI-compatible endpoint.
 
-    Returns None when no endpoint is set (the caller falls back to a template)
-    or when the call fails. Reusable by any read-only agent that needs prose.
+    ``history`` is prior turns as ``[{"role": "user"|"assistant", "content": str},
+    ...]``, oldest first - passed through as real chat messages (not stuffed
+    into the prompt text) so the model can resolve "what about him" style
+    follow-ups. Returns None when no endpoint is set (the caller falls back
+    to a template) or when the call fails. Reusable by any read-only agent
+    that needs prose.
     """
     if not settings.llm_base_url:
         return None
@@ -316,15 +326,15 @@ def chat(system: str, user: str, *, temperature: float = 0.2) -> str | None:
         if settings.llm_api_key:
             headers["Authorization"] = f"Bearer {settings.llm_api_key}"
         url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+        messages = [{"role": "system", "content": system}]
+        messages.extend(history or [])
+        messages.append({"role": "user", "content": user})
         with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
             resp = client.post(
                 url,
                 json={
                     "model": settings.llm_model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
+                    "messages": messages,
                     "temperature": temperature,
                 },
                 headers=headers,

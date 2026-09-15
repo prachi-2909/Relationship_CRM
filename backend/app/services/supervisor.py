@@ -5,11 +5,16 @@ and it never sends anything. A human reads the answer and decides.
 Routing is deterministic, not an LLM tool-calling loop:
   1. Try to resolve person names mentioned in the question against known
      officials (a handful of officials, one query — cheap).
-  2. If any resolve to a relationship, build a full Brief for each (capped,
-     since a Brief is several queries) - a *targeted* answer.
-  3. Otherwise fall back to a ranked portfolio scan (three queries total,
+  2. Named nobody, but the question reads like a pronoun follow-up ("what
+     about HIS stakeholders?") and the conversation's last turn named
+     someone -> carry that subject forward instead of resolving names again.
+  3. Either way, build a full Brief per subject (capped, since a Brief is
+     several queries) - a *targeted* answer.
+  4. Otherwise fall back to a ranked portfolio scan (three queries total,
      regardless of how many relationships exist) - a *portfolio* answer.
-Exactly one LLM call happens either way, over the already-gathered context.
+Exactly one LLM call happens either way, over the already-gathered context
+plus the recent conversation turns (real chat history, not stuffed text) so
+the model can actually resolve a follow-up rather than just guess.
 """
 
 from __future__ import annotations
@@ -52,6 +57,40 @@ def _match_officials(db: Session, question: str) -> list[Official]:
     return matches
 
 
+# English + common Hindi/Hinglish referents. Whole-word match only, so this
+# never fires on an unrelated word that merely contains one as a substring.
+_FOLLOWUP_HINTS = {
+    "he", "him", "his", "she", "her", "hers", "they", "them", "their",
+    "unka", "unke", "unko", "uske", "uska", "usko", "unhe", "unhone",
+    "voh", "wo", "vo",
+}
+
+
+def _looks_like_followup(question: str) -> bool:
+    tokens = set(re.findall(r"[a-z']+", question.lower()))
+    return bool(tokens & _FOLLOWUP_HINTS)
+
+
+def _briefs_for(db: Session, official_ids: list[int]) -> tuple[list[dict], list[dict]]:
+    """Full Brief + a considered-entry for each official that has a
+    relationship, in the given order. Skips ids with no relationship."""
+    rels = {
+        r.official_id: r
+        for r in db.scalars(
+            select(Relationship).where(Relationship.official_id.in_(official_ids))
+        )
+    }
+    context: list[dict] = []
+    considered: list[dict] = []
+    for official_id in official_ids:
+        rel = rels.get(official_id)
+        if rel is None:
+            continue
+        context.append(brief_svc.build(db, rel))
+        considered.append({"relationship_id": rel.id, "official_name": rel.official.name})
+    return context, considered
+
+
 _SYSTEM_PROMPT = (
     "You are a relationship-intelligence assistant for a CRM. Answer the "
     "user's question using ONLY the structured data provided below - never "
@@ -87,13 +126,24 @@ _SYSTEM_PROMPT = (
     "review'). Never write the draft's wording yourself.\n"
     "- A moment with status detected has not been drafted yet - at most "
     "note that one is open, don't imply it is ready to send.\n"
-    "- Name any overdue follow-up by its title, not just that one exists."
+    "- Name any overdue follow-up by its title, not just that one exists.\n\n"
+    "You may be shown earlier turns of this same conversation before the "
+    "current question. Use them only to resolve what a pronoun or vague "
+    "reference in the new question points to (e.g. 'his', 'them') - the "
+    "structured data given for THIS question is still the only source of "
+    "fact for your answer; do not restate the earlier answer."
 )
 
 
-def _synthesize(question: str, scope: str, context: list[dict]) -> tuple[str, str]:
+def _synthesize(
+    question: str, scope: str, context: list[dict], history: list[dict] | None
+) -> tuple[str, str]:
     payload = json.dumps({"scope": scope, "data": context}, default=str)
-    text = llm.chat(_SYSTEM_PROMPT, f"Question: {question}\n\nData:\n{payload}")
+    text = llm.chat(
+        _SYSTEM_PROMPT,
+        f"Question: {question}\n\nData:\n{payload}",
+        history=history,
+    )
     if text:
         return text, f"llm:{llm.settings.llm_model}"
     return _template_answer(question, scope, context), "template"
@@ -125,31 +175,40 @@ def _template_answer(question: str, scope: str, context: list[dict]) -> str:
     return "Top relationships needing attention:\n" + "\n".join(f"- {l}" for l in lines)
 
 
-def answer(db: Session, actor: User, question: str) -> dict:
-    matched = _match_officials(db, question)
+def answer(
+    db: Session,
+    actor: User,
+    question: str,
+    *,
+    history: list[dict] | None = None,
+    prior_considered: list[dict] | None = None,
+) -> dict:
     considered: list[dict] = []
     context: list[dict] = []
     scope = "portfolio"
 
+    matched = _match_officials(db, question)
     if matched and len(matched) <= _MAX_TARGETED:
-        matched_ids = [o.id for o in matched]
-        rels = {
-            r.official_id: r
-            for r in db.scalars(
-                select(Relationship).where(Relationship.official_id.in_(matched_ids))
-            )
-        }
-        for official in matched:
-            rel = rels.get(official.id)
-            if rel is None:
-                continue
-            b = brief_svc.build(db, rel)
-            context.append(b)
-            considered.append(
-                {"relationship_id": rel.id, "official_name": official.name}
-            )
+        context, considered = _briefs_for(db, [o.id for o in matched])
         if context:
             scope = "targeted"
+
+    # named nobody new, but this reads as a follow-up on who was just
+    # discussed ("what about his stakeholders?") -> carry that subject
+    # forward instead of falling through to a portfolio-wide answer
+    if not context and prior_considered and _looks_like_followup(question):
+        prior_rel_ids = [c["relationship_id"] for c in prior_considered][:_MAX_TARGETED]
+        if prior_rel_ids:
+            rels = db.scalars(
+                select(Relationship).where(Relationship.id.in_(prior_rel_ids))
+            ).all()
+            context = [brief_svc.build(db, rel) for rel in rels]
+            considered = [
+                {"relationship_id": rel.id, "official_name": rel.official.name}
+                for rel in rels
+            ]
+            if context:
+                scope = "targeted"
 
     if not context:
         rows = portfolio.scan(db, actor)
@@ -159,7 +218,7 @@ def answer(db: Session, actor: User, question: str) -> dict:
             for r in rows
         ]
 
-    answer_text, generated_by = _synthesize(question, scope, context)
+    answer_text, generated_by = _synthesize(question, scope, context, history)
     return {
         "answer": answer_text,
         "generated_by": generated_by,
