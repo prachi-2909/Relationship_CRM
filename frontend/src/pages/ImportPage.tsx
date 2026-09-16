@@ -170,6 +170,7 @@ export function ImportPage() {
               <div className="mt-2 flex items-center gap-3">
                 <Button
                   size="sm"
+                  variant="gold"
                   disabled={!csvText.trim() || stage.isPending}
                   onClick={() => stage.mutate({ filename, csv_text: csvText })}
                 >
@@ -205,6 +206,7 @@ export function ImportPage() {
               <div className="mt-2 flex items-center gap-3">
                 <Button
                   size="sm"
+                  variant="gold"
                   disabled={!file || upload.isPending}
                   onClick={() => file && upload.mutate(file)}
                 >

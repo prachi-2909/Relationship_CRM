@@ -61,7 +61,11 @@ export function RelationshipsPage() {
         {canEdit && (
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-secondary"
+            className={
+              showForm
+                ? "rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted"
+                : "rounded-lg bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] px-3 py-1.5 text-sm font-semibold text-secondary-foreground shadow-glow-gold transition-transform hover:-translate-y-0.5"
+            }
           >
             {showForm ? "Cancel" : "New relationship"}
           </button>

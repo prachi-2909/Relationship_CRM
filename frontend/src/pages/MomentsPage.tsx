@@ -297,7 +297,7 @@ function MomentPanel({
                 </button>
                 <button
                   onClick={() => doApprove.mutate()}
-                  className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-accent-foreground hover:opacity-90"
+                  className="rounded-lg bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] px-3 py-1.5 text-sm font-semibold text-secondary-foreground shadow-glow-gold transition-transform hover:-translate-y-0.5"
                 >
                   Approve
                 </button>

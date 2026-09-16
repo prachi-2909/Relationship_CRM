@@ -44,6 +44,8 @@ export default {
       boxShadow: {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
+        "glow-gold": "var(--shadow-glow-gold)",
+        "glow-primary": "var(--shadow-glow-primary)",
       },
       fontFamily: {
         sans: [

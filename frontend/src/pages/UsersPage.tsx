@@ -60,7 +60,11 @@ export function UsersPage() {
         title="Users"
         description="Accounts and roles. Admin only."
         actions={
-          <Button size="sm" onClick={() => setAddingOpen((v) => !v)}>
+          <Button
+            size="sm"
+            variant={addingOpen ? "secondary" : "gold"}
+            onClick={() => setAddingOpen((v) => !v)}
+          >
             {addingOpen ? "Cancel" : "Add user"}
           </Button>
         }

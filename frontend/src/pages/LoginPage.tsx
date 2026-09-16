@@ -84,7 +84,7 @@ export function LoginPage() {
 
           {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" disabled={submitting} className="w-full">
+          <Button type="submit" variant="gold" disabled={submitting} className="w-full">
             {submitting ? "Signing in…" : "Sign in"}
           </Button>
         </form>

@@ -27,21 +27,26 @@ export function Card({
   children,
   className = "",
   as: Tag = "div",
+  interactive = false,
 }: {
   children: ReactNode;
   className?: string;
   as?: "div" | "section";
+  /** Adds the hover-lift treatment used for clickable cards throughout the app. */
+  interactive?: boolean;
 }) {
   return (
     <Tag
-      className={`rounded-lg border border-border bg-card shadow-sm ${className}`}
+      className={`rounded-xl border border-border bg-card shadow-sm ${
+        interactive ? "transition-all hover:-translate-y-0.5 hover:shadow-md" : ""
+      } ${className}`}
     >
       {children}
     </Tag>
   );
 }
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "gold";
 const VARIANTS: Record<Variant, string> = {
   primary:
     "bg-primary text-primary-foreground hover:bg-secondary shadow-sm",
@@ -49,6 +54,9 @@ const VARIANTS: Record<Variant, string> = {
     "border border-border bg-card text-foreground hover:bg-muted",
   ghost: "text-muted-foreground hover:bg-muted",
   danger: "bg-destructive text-destructive-foreground hover:opacity-90",
+  // the signature kiosk.eko.in treatment - reserved for the one standout
+  // action on a page (a hero CTA), not every button, to keep its impact.
+  gold: "bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] text-secondary-foreground shadow-glow-gold hover:-translate-y-0.5",
 };
 
 export function Button({
@@ -63,7 +71,7 @@ export function Button({
   const sizing = size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-2 text-sm";
   return (
     <button
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-semibold transition-colors disabled:opacity-55 disabled:pointer-events-none ${sizing} ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-all disabled:opacity-55 disabled:pointer-events-none disabled:translate-y-0 disabled:shadow-none ${sizing} ${VARIANTS[variant]} ${className}`}
       {...props}
     />
   );
