@@ -32,6 +32,14 @@ class BriefDate(BaseModel):
     in_days: int
 
 
+class BriefOpportunity(BaseModel):
+    id: int
+    title: str
+    status: str
+    stage: str
+    days_since_activity: int
+
+
 class ReconnectOpportunity(BaseModel):
     yes: bool
     reason: str
@@ -80,4 +88,5 @@ class RelationshipBrief(BaseModel):
     recent_commitments: list[str]
     open_moments: list[BriefMoment]
     upcoming_dates: list[BriefDate]
+    open_opportunities: list[BriefOpportunity]
     recent_interactions: list[BriefInteraction]

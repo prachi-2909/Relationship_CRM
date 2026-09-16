@@ -1,5 +1,15 @@
 """SQLAlchemy models. Importing this package registers every table on Base.metadata."""
 
+from .agent import (
+    AgentRecommendation,
+    AgentRun,
+    AgentRunScope,
+    AgentRunStatus,
+    AgentTrigger,
+    RecommendationStatus,
+    RecommendationType,
+    RiskTier,
+)
 from .audit import AuditLog
 from .base import Base, TimestampMixin
 from .connection import Connection, ConnectionStatus, ConnectionType
@@ -16,6 +26,13 @@ from .official import (
     VerificationStatus,
 )
 from .official_date import DateKind, OfficialDate
+from .opportunity import (
+    Opportunity,
+    OpportunityActivity,
+    OpportunityActivityType,
+    OpportunityStage,
+    OpportunityStatus,
+)
 from .org_unit_type import OrgUnitType
 from .organization_unit import OrganizationUnit, OrgUnitStatus
 from .relationship import (
@@ -32,6 +49,14 @@ from .user import Role, User, UserStatus
 __all__ = [
     "Base",
     "TimestampMixin",
+    "AgentRun",
+    "AgentRecommendation",
+    "AgentTrigger",
+    "AgentRunScope",
+    "AgentRunStatus",
+    "RecommendationType",
+    "RiskTier",
+    "RecommendationStatus",
     "User",
     "Role",
     "UserStatus",
@@ -72,4 +97,9 @@ __all__ = [
     "AskConversation",
     "AskMessage",
     "MessageRole",
+    "Opportunity",
+    "OpportunityActivity",
+    "OpportunityStatus",
+    "OpportunityStage",
+    "OpportunityActivityType",
 ]

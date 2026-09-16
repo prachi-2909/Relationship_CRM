@@ -15,6 +15,7 @@ from ...schemas.task import TaskCreate, TaskListResponse, TaskOut, TaskUpdate
 from ...scheduler import sweep_overdue_tasks
 from ...security.deps import get_current_user, require_roles
 from ...services import audit, scoring
+from ...services import tasks as tasks_svc
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -95,27 +96,15 @@ def create_task(
     if assigned_to is not None and db.get(User, assigned_to) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Assignee not found")
 
-    task = Task(
-        relationship_id=rel.id,
-        official_id=rel.official_id,
+    task = tasks_svc.create_task(
+        db,
+        relationship=rel,
         title=payload.title,
         detail=payload.detail,
         due_at=payload.due_at,
         assigned_to=assigned_to,
         source_interaction_id=payload.source_interaction_id,
-        created_by=actor.id,
-        status=TaskStatus.OPEN,
-    )
-    db.add(task)
-    db.flush()
-    scoring.recompute_and_store(db, rel, reason="task created")
-    audit.record(
-        db,
-        action="task.create",
-        entity_type="task",
-        entity_id=task.id,
         actor_id=actor.id,
-        after={"relationship_id": rel.id, "title": task.title},
     )
     db.commit()
     db.refresh(task)

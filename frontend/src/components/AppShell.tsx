@@ -28,6 +28,7 @@ const NAV: NavGroup[] = [
       { to: "/officials", label: "Officials" },
       { to: "/relationships", label: "Relationships" },
       { to: "/interactions", label: "Interactions" },
+      { to: "/opportunities", label: "Opportunities" },
       { to: "/follow-ups", label: "Follow-ups" },
     ],
   },
@@ -35,6 +36,7 @@ const NAV: NavGroup[] = [
     heading: "Intelligence",
     items: [
       { to: "/moments", label: "Engagement Moments" },
+      { to: "/agent", label: "Autonomous Agent" },
       { to: "/import", label: "Data Ingestion" },
     ],
   },

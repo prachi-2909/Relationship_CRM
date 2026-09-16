@@ -23,6 +23,7 @@ from ...schemas.interaction import (
 from ...security.deps import get_current_user, require_roles
 from ...services import audit, scoring
 from ...services import connections as connections_svc
+from ...services import opportunities as opportunities_svc
 from ...services.importance import recompute as recompute_importance
 from ...services.email_parse import parse_email
 from ...services.llm import extract_interaction
@@ -40,6 +41,7 @@ def _apply_extraction(interaction: Interaction) -> None:
         "topics": result.topics,
         "commitments": result.commitments,
         "requests": result.requests,
+        "opportunities": result.opportunities,
         "people": result.people,
         "relations": [r.model_dump(by_alias=True) for r in result.relations],
     }
@@ -148,6 +150,8 @@ def create_interaction(
 
     # names co-mentioned here -> suggested "works_with" edges for a human to confirm
     connections_svc.suggest_from_interaction(db, interaction)
+    # anything that reads as a potential opportunity -> suggested, for a human to confirm
+    opportunities_svc.suggest_from_interaction(db, interaction)
 
     recompute_importance(db, rel)
     scoring.recompute_and_store(db, rel, reason="interaction logged")
@@ -240,6 +244,7 @@ def reprocess_interaction(
         "topics": result.topics,
         "commitments": result.commitments,
         "requests": result.requests,
+        "opportunities": result.opportunities,
         "people": result.people,
         "relations": [r.model_dump(by_alias=True) for r in result.relations],
     }

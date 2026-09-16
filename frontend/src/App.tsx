@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 
+import { AgentPage } from "./pages/AgentPage";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuditLogPage } from "./pages/AuditLogPage";
@@ -10,6 +11,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MomentsPage } from "./pages/MomentsPage";
 import { OfficialProfilePage } from "./pages/OfficialProfilePage";
 import { OfficialsPage } from "./pages/OfficialsPage";
+import { OpportunitiesPage } from "./pages/OpportunitiesPage";
 import { OrganisationPage } from "./pages/OrganisationPage";
 import { RelationshipDetailPage } from "./pages/RelationshipDetailPage";
 import { RelationshipsPage } from "./pages/RelationshipsPage";
@@ -31,9 +33,11 @@ export default function App() {
           <Route path="relationships" element={<RelationshipsPage />} />
           <Route path="relationships/:id" element={<RelationshipDetailPage />} />
           <Route path="interactions" element={<InteractionsPage />} />
+          <Route path="opportunities" element={<OpportunitiesPage />} />
           <Route path="follow-ups" element={<TasksPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="moments" element={<MomentsPage />} />
+          <Route path="agent" element={<AgentPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="audit" element={<AuditLogPage />} />
           <Route

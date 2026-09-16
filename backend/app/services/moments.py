@@ -162,6 +162,23 @@ def _create(
     return moment
 
 
+def create_manual(
+    db: Session,
+    rel: Relationship,
+    moment_type: MomentType,
+    evidence: dict,
+    *,
+    event_date: date | None = None,
+    suppressed_reason: str | None = None,
+) -> EngagementMoment:
+    """Public entry point for a moment proposed by something other than
+    ``detect_for_relationship`` (currently: an approved agent recommendation).
+    Lands the moment at DETECTED, same as detection would — callers that want
+    it drafted immediately should follow with ``build_draft`` + setting
+    DRAFT_READY themselves, same as the /moments/{id}/draft endpoint does."""
+    return _create(db, rel, moment_type, event_date, evidence, suppressed_reason=suppressed_reason)
+
+
 def detect_for_relationship(
     db: Session, rel: Relationship, now: datetime | None = None
 ) -> list[EngagementMoment]:

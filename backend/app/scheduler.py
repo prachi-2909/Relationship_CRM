@@ -16,7 +16,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models.relationship import Relationship
 from .models.task import Task, TaskStatus
-from .services import audit, moments, scoring
+from .services import agent, audit, moments, scoring
 from .services.importance import recompute as recompute_importance
 
 logger = logging.getLogger("rcrm.scheduler")
@@ -63,12 +63,19 @@ def _nightly_job() -> None:
         n_scores = recompute_all_scores(db)
         n_overdue = sweep_overdue_tasks(db)
         n_moments = moments.detect_all(db)
+        n_expired = agent.expire_stale_recommendations(db)
+        n_agent_recs = 0
+        if settings.enable_agent:
+            n_agent_recs = agent.run_nightly(db).recommendations_created
         db.commit()
         logger.info(
-            "nightly: rescored %s relationships, escalated %s tasks, detected %s moments",
+            "nightly: rescored %s relationships, escalated %s tasks, detected %s moments, "
+            "agent created %s recommendation(s) (%s expired)",
             n_scores,
             n_overdue,
             n_moments,
+            n_agent_recs,
+            n_expired,
         )
     except Exception:  # pragma: no cover - defensive
         db.rollback()

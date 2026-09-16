@@ -53,6 +53,7 @@ class ExtractionResult(BaseModel):
     topics: list[str] = Field(default_factory=list)
     commitments: list[str] = Field(default_factory=list)
     requests: list[str] = Field(default_factory=list)
+    opportunities: list[str] = Field(default_factory=list)
     people: list[str] = Field(default_factory=list)
     relations: list[RelationMention] = Field(default_factory=list)
     model: str = "stub"
@@ -76,6 +77,13 @@ _COMMIT_HINTS = (
 _REQUEST_HINTS = (
     "please", "request", "requested", "kindly", "need ", "needs ", "require",
     "can you", "could you", "would you", "expedite", "help with",
+)
+_OPPORTUNITY_HINTS = (
+    "interested in", "looking to", "looking for", "considering", "would like to explore",
+    "potential for", "opportunity to", "keen to", "wants to open", "wants to avail",
+    "plan to invest", "planning to invest", "expand their", "expand its", "scale up",
+    "new requirement", "cross-sell", "cross sell", "upsell", "renewal due",
+    "renew the", "upgrade to", "additional facility", "new branch", "new product",
 )
 _HONORIFICS = re.compile(
     r"\b(?:Mr\.?|Mrs\.?|Ms\.?|Shri|Smt\.?|Dr\.?|Sri)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})"
@@ -158,13 +166,15 @@ def _stub_extract(text: str) -> ExtractionResult:
 
     summary = " ".join(sentences[:2])[:280]
 
-    commitments, requests = [], []
+    commitments, requests, opportunities = [], [], []
     for s in sentences:
         low = s.lower()
         if any(h in low for h in _COMMIT_HINTS):
             commitments.append(s[:200])
         if any(h in low for h in _REQUEST_HINTS):
             requests.append(s[:200])
+        if any(h in low for h in _OPPORTUNITY_HINTS):
+            opportunities.append(s[:200])
 
     people = []
     for m in _HONORIFICS.finditer(text):
@@ -191,6 +201,7 @@ def _stub_extract(text: str) -> ExtractionResult:
         topics=topics,
         commitments=commitments[:8],
         requests=requests[:8],
+        opportunities=opportunities[:8],
         people=people[:8],
         relations=relations,
         model="stub",
@@ -203,7 +214,10 @@ _SYSTEM_PROMPT = (
     "mix. Reply with ONLY a JSON object with keys: summary (string, <= 3 sentences, "
     "English), sentiment (one of positive/neutral/negative/unknown), topics (array "
     "of short strings), commitments (array of strings - things someone said they "
-    "will do), requests (array of strings - things someone asked for), people "
+    "will do), requests (array of strings - things someone asked for), opportunities "
+    "(array of strings - a potential new business opportunity or need the note "
+    "states or clearly implies, e.g. interest in a new product, an expansion, or an "
+    "upsell/cross-sell signal - omit if none), people "
     "(array of person names mentioned), relations (array of objects describing a "
     "relationship BETWEEN TWO NAMED PEOPLE that the note states or clearly implies). "
     'Each relation object is {"from": name, "to": name, "type": one of '
@@ -250,6 +264,7 @@ def _llm_extract(text: str, interaction_type: str) -> ExtractionResult:
         topics=[str(x) for x in data.get("topics", [])][:12],
         commitments=[str(x) for x in data.get("commitments", [])][:12],
         requests=[str(x) for x in data.get("requests", [])][:12],
+        opportunities=[str(x) for x in data.get("opportunities", [])][:12],
         people=[str(x) for x in data.get("people", [])][:12],
         relations=_coerce_relations(data.get("relations")),
         model=settings.llm_model,

@@ -229,6 +229,13 @@ export interface RelationshipBrief {
     suppressed: boolean;
   }[];
   upcoming_dates: { kind: string; date: string; in_days: number }[];
+  open_opportunities: {
+    id: number;
+    title: string;
+    status: string;
+    stage: string;
+    days_since_activity: number;
+  }[];
   recent_interactions: {
     occurred_at: string;
     type: string;
@@ -498,6 +505,188 @@ export interface MomentDetail extends MomentSummary {
 
 export interface MomentListResponse {
   items: MomentSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// --- opportunities --------------------------------------------------------
+// Detection mirrors the stakeholder connection graph: a manual entry lands
+// confirmed; something extracted from an interaction note lands suggested and
+// waits for a human to confirm or dismiss it. Stage only progresses once
+// confirmed.
+
+export type OpportunityStatus = "suggested" | "confirmed" | "dismissed";
+export type OpportunityStage =
+  | "identified"
+  | "qualified"
+  | "proposal"
+  | "negotiation"
+  | "won"
+  | "lost";
+export type OpportunityActivityType = "email" | "call" | "meeting" | "note" | "stage_change";
+
+export const OPPORTUNITY_STAGES: OpportunityStage[] = [
+  "identified",
+  "qualified",
+  "proposal",
+  "negotiation",
+  "won",
+  "lost",
+];
+
+export const OPPORTUNITY_STAGE_LABELS: Record<OpportunityStage, string> = {
+  identified: "Identified",
+  qualified: "Qualified",
+  proposal: "Proposal",
+  negotiation: "Negotiation",
+  won: "Won",
+  lost: "Lost",
+};
+
+export const OPPORTUNITY_STATUS_TONE: Record<
+  OpportunityStatus,
+  "neutral" | "primary" | "good" | "warn"
+> = {
+  suggested: "primary",
+  confirmed: "good",
+  dismissed: "neutral",
+};
+
+export const OPPORTUNITY_ACTIVITY_TYPES: OpportunityActivityType[] = [
+  "email",
+  "call",
+  "meeting",
+  "note",
+];
+
+export interface OpportunitySummary {
+  id: number;
+  relationship_id: number;
+  official_id: number;
+  official_name: string;
+  title: string;
+  status: OpportunityStatus;
+  stage: OpportunityStage;
+  source: string;
+  source_interaction_id: number | null;
+  closed_at: string | null;
+  created_at: string;
+}
+
+export interface OpportunityActivity {
+  id: number;
+  opportunity_id: number;
+  type: OpportunityActivityType;
+  occurred_at: string;
+  note: string;
+  from_stage: OpportunityStage | null;
+  to_stage: OpportunityStage | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface OpportunityDetail extends OpportunitySummary {
+  detail: string | null;
+  outcome_note: string | null;
+  created_by: number | null;
+  decided_by: number | null;
+  decided_at: string | null;
+  activities: OpportunityActivity[];
+}
+
+export interface OpportunityListResponse {
+  items: OpportunitySummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// --- autonomous agent ---------------------------------------------------
+// Observe + recommend only: a run never writes a real domain object itself,
+// it only produces recommendations a human must approve.
+
+export type AgentTrigger = "manual" | "nightly";
+export type AgentRunScope = "relationship" | "portfolio";
+export type AgentRunStatus = "running" | "completed" | "failed";
+export type RecommendationType = "create_task" | "draft_moment" | "create_opportunity";
+export type RiskTier = "low" | "medium" | "high";
+export type RecommendationStatus = "pending" | "approved" | "rejected" | "expired";
+
+export const AGENT_REC_TYPE_LABELS: Record<RecommendationType, string> = {
+  create_task: "Create a follow-up",
+  draft_moment: "Draft an engagement moment",
+  create_opportunity: "Create an opportunity",
+};
+
+export const RECOMMENDATION_STATUS_TONE: Record<
+  RecommendationStatus,
+  "neutral" | "primary" | "good" | "warn"
+> = {
+  pending: "primary",
+  approved: "good",
+  rejected: "warn",
+  expired: "neutral",
+};
+
+export const RISK_TIER_TONE: Record<RiskTier, "good" | "warn" | "danger"> = {
+  low: "good",
+  medium: "warn",
+  high: "danger",
+};
+
+export interface AgentRunSummary {
+  id: number;
+  trigger: AgentTrigger;
+  scope: AgentRunScope;
+  relationship_id: number | null;
+  requested_by: number | null;
+  status: AgentRunStatus;
+  model: string;
+  relationships_considered: number;
+  recommendations_created: number;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+export interface AgentRunDetail extends AgentRunSummary {
+  tools_used: string[];
+  recommendations: RecommendationSummary[];
+}
+
+export interface AgentRunListResponse {
+  items: AgentRunSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RecommendationSummary {
+  id: number;
+  run_id: number;
+  relationship_id: number;
+  official_id: number;
+  official_name: string;
+  type: RecommendationType;
+  risk_tier: RiskTier;
+  reasoning: string;
+  status: RecommendationStatus;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface RecommendationDetail extends RecommendationSummary {
+  evidence: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  result_ref: Record<string, unknown> | null;
+  decided_by: number | null;
+  decided_at: string | null;
+}
+
+export interface RecommendationListResponse {
+  items: RecommendationSummary[];
   total: number;
   limit: number;
   offset: number;

@@ -31,15 +31,17 @@ _OPEN_MOMENT_STATUSES = (
 _BAND_ORDER = {"At risk": 0, "Attention required": 1, "Healthy": 2, "Strong": 3}
 
 
-def scan(db: Session, actor: User, *, limit: int = 20) -> list[dict]:
+def scan(db: Session, actor: User | None, *, limit: int = 20) -> list[dict]:
     """Compact, ranked view of the relationships ``actor`` can see.
 
     Ordered worst-first (band, then score) so "what needs attention" is
     always at the top. A relationship manager sees their own book; admin
     and approver-viewer see everything, matching the existing list rules.
+    ``actor=None`` means no ownership filter at all (the nightly agent run,
+    which has no human actor but should see the whole portfolio like an admin).
     """
     filters = []
-    if actor.role is Role.RELATIONSHIP_MANAGER:
+    if actor is not None and actor.role is Role.RELATIONSHIP_MANAGER:
         filters.append(Relationship.owner_id == actor.id)
 
     rels = db.scalars(select(Relationship).where(*filters)).all()

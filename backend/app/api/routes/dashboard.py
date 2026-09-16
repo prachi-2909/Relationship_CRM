@@ -10,6 +10,7 @@ from ...config import get_settings
 from ...db import get_db
 from ...models.engagement_moment import EngagementMoment, MomentStatus
 from ...models.official import Official, OfficialStatus
+from ...models.opportunity import Opportunity, OpportunityStage, OpportunityStatus
 from ...models.organization_unit import OrganizationUnit, OrgUnitStatus
 from ...models.relationship import Relationship, RiskLevel
 from ...models.task import Task, TaskStatus
@@ -82,6 +83,36 @@ def dashboard_summary(
     for score in scores:
         bands[band(score)[0]] += 1
 
+    opportunities_suggested = db.scalar(
+        select(func.count())
+        .select_from(Opportunity)
+        .where(Opportunity.status == OpportunityStatus.SUGGESTED)
+    ) or 0
+    open_pipeline_stages = (
+        OpportunityStage.IDENTIFIED,
+        OpportunityStage.QUALIFIED,
+        OpportunityStage.PROPOSAL,
+        OpportunityStage.NEGOTIATION,
+    )
+    opportunity_stage_counts: dict[str, int] = {}
+    for stage in open_pipeline_stages:
+        opportunity_stage_counts[stage.value] = db.scalar(
+            select(func.count())
+            .select_from(Opportunity)
+            .where(Opportunity.status == OpportunityStatus.CONFIRMED)
+            .where(Opportunity.stage == stage)
+        ) or 0
+    opportunities_won = db.scalar(
+        select(func.count()).select_from(Opportunity).where(Opportunity.stage == OpportunityStage.WON)
+    ) or 0
+    opportunities_lost = db.scalar(
+        select(func.count()).select_from(Opportunity).where(Opportunity.stage == OpportunityStage.LOST)
+    ) or 0
+    closed_total = opportunities_won + opportunities_lost
+    opportunity_conversion_rate = (
+        round(opportunities_won / closed_total * 100) if closed_total else None
+    )
+
     return {
         "officials": officials,
         "units": units,
@@ -94,4 +125,9 @@ def dashboard_summary(
         "moments_open": moments_open,
         "health_bands": bands,
         "moments_enabled": settings.enable_moments,
+        "opportunities_suggested": opportunities_suggested,
+        "opportunity_stage_counts": opportunity_stage_counts,
+        "opportunities_won": opportunities_won,
+        "opportunities_lost": opportunities_lost,
+        "opportunity_conversion_rate": opportunity_conversion_rate,
     }

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from .routes import (
+    agent,
     ask,
     audit_logs,
     auth,
@@ -13,6 +14,7 @@ from .routes import (
     interactions,
     moments,
     officials,
+    opportunities,
     organization,
     relationships,
     tasks,
@@ -24,12 +26,14 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(ask.router)
+api_router.include_router(agent.router)
 api_router.include_router(users.router)
 api_router.include_router(organization.router)
 api_router.include_router(officials.router)
 api_router.include_router(relationships.router)
 api_router.include_router(interactions.router)
 api_router.include_router(connections.router)
+api_router.include_router(opportunities.router)
 api_router.include_router(tasks.router)
 api_router.include_router(imports.router)
 api_router.include_router(moments.router)

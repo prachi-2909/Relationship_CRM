@@ -414,8 +414,9 @@ function BriefBody({
 
       {(brief.recent_commitments.length > 0 ||
         brief.open_followups.length > 0 ||
-        brief.upcoming_dates.length > 0) && (
-        <div className="grid gap-4 border-t border-border pt-3 sm:grid-cols-3">
+        brief.upcoming_dates.length > 0 ||
+        brief.open_opportunities.length > 0) && (
+        <div className="grid gap-4 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
           {brief.open_followups.length > 0 && (
             <div>
               <div className={section}>Open follow-ups</div>
@@ -446,6 +447,21 @@ function BriefBody({
                 {brief.upcoming_dates.map((d, i) => (
                   <li key={i}>
                     {d.kind} · in {d.in_days} days
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {brief.open_opportunities.length > 0 && (
+            <div>
+              <div className={section}>Open opportunities</div>
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {brief.open_opportunities.map((o) => (
+                  <li key={o.id}>
+                    {o.title}
+                    <span className="text-muted-foreground/70"> · {o.stage}</span>
+                    {o.status === "suggested" && <Badge tone="primary"> suggested</Badge>}
+                    {o.days_since_activity >= 14 && <Badge tone="warn"> stalled</Badge>}
                   </li>
                 ))}
               </ul>
@@ -533,7 +549,7 @@ function LogInteractionForm({
 
   if (!open) {
     return (
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button size="sm" variant="gold" onClick={() => setOpen(true)}>
         Log interaction
       </Button>
     );

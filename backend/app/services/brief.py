@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models.engagement_moment import EngagementMoment, MomentStatus, MomentType
 from ..models.interaction import Interaction, Sentiment
 from ..models.official_date import DateKind, OfficialDate
+from ..models.opportunity import Opportunity, OpportunityActivity, OpportunityStage, OpportunityStatus
 from ..models.organization_unit import OrganizationUnit
 from ..models.relationship import Relationship, RelationshipScoreHistory, RelationshipStatus
 from ..models.task import Task, TaskStatus
@@ -33,6 +34,8 @@ _OPEN_MOMENT_STATUSES = (
     MomentStatus.DRAFT_READY,
     MomentStatus.APPROVED,
 )
+_OPEN_OPPORTUNITY_STATUSES = (OpportunityStatus.SUGGESTED, OpportunityStatus.CONFIRMED)
+_CLOSED_OPPORTUNITY_STAGES = (OpportunityStage.WON, OpportunityStage.LOST)
 _ACTIVE_PLUS = {
     RelationshipStatus.ACTIVE,
     RelationshipStatus.STRONG,
@@ -181,6 +184,31 @@ def build(db: Session, rel: Relationship) -> dict:
             upcoming_dates.append(
                 {"kind": d.kind.value, "date": nxt.isoformat(), "in_days": in_days}
             )
+
+    # --- open opportunities -----------------------------------------
+    open_opportunities = []
+    for o in db.scalars(
+        select(Opportunity)
+        .where(Opportunity.relationship_id == rel.id)
+        .where(Opportunity.status.in_(_OPEN_OPPORTUNITY_STATUSES))
+        .where(Opportunity.stage.not_in(_CLOSED_OPPORTUNITY_STAGES))
+        .order_by(Opportunity.created_at.desc())
+    ):
+        last_activity = db.scalar(
+            select(func.max(OpportunityActivity.occurred_at)).where(
+                OpportunityActivity.opportunity_id == o.id
+            )
+        )
+        reference = _aware(last_activity) if last_activity else _aware(o.created_at)
+        open_opportunities.append(
+            {
+                "id": o.id,
+                "title": o.title,
+                "status": o.status.value,
+                "stage": o.stage.value,
+                "days_since_activity": (now - reference).days,
+            }
+        )
 
     # --- what is important -----------------------------------------
     _, imp_reasons = importance_svc.compute(db, rel)
@@ -331,6 +359,7 @@ def build(db: Session, rel: Relationship) -> dict:
         "recent_commitments": commitments[:8],
         "open_moments": open_moments,
         "upcoming_dates": upcoming_dates,
+        "open_opportunities": open_opportunities,
         "recent_interactions": recent_interactions,
     }
     brief["narrative"], brief["generated_by"] = _narrative(brief)

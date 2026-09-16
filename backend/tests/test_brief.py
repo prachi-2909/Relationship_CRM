@@ -66,6 +66,25 @@ def test_brief_surfaces_the_open_commitment_as_next_step(client, make_user, logi
     assert "commitment" in body["next_interaction"].lower() or body["open_followups"]
 
 
+def test_brief_surfaces_open_opportunities(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    _, rel = _setup(client)
+
+    before = client.get(f"/api/v1/relationships/{rel['id']}/brief").json()
+    assert before["open_opportunities"] == []
+
+    client.post(
+        "/api/v1/opportunities", json={"relationship_id": rel["id"], "title": "New POS terminals"}
+    )
+    after = client.get(f"/api/v1/relationships/{rel['id']}/brief").json()
+    assert len(after["open_opportunities"]) == 1
+    opp = after["open_opportunities"][0]
+    assert opp["title"] == "New POS terminals"
+    assert opp["status"] == "confirmed"
+    assert opp["stage"] == "identified"
+    assert opp["days_since_activity"] == 0
+
+
 def test_brief_requires_auth(client):
     resp = client.get("/api/v1/relationships/1/brief")
     assert resp.status_code == 401
