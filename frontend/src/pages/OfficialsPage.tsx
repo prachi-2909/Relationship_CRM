@@ -1,13 +1,14 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { Badge, VerificationBadge } from "../components/Badge";
+import { VerificationBadge } from "../components/Badge";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import type {
   OfficialDetail,
   OfficialListResponse,
+  OfficialSummary,
   OrgUnit,
   VerificationStatus,
 } from "../types";
@@ -19,6 +20,32 @@ const VERIF_OPTIONS: (VerificationStatus | "")[] = [
   "partially_verified",
   "verified",
 ];
+
+const AVATAR_PALETTE = [
+  "bg-primary/15 text-secondary",
+  "bg-accent/15 text-accent",
+  "bg-[hsl(36_78%_46%)]/15 text-[hsl(36_70%_36%)]",
+  "bg-destructive/10 text-destructive",
+  "bg-muted text-muted-foreground",
+];
+
+function avatarClass(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+interface UnitGroup {
+  key: string;
+  unitName: string;
+  unitType: string | null;
+  items: OfficialSummary[];
+}
 
 export function OfficialsPage() {
   const { user } = useAuth();
@@ -59,18 +86,46 @@ export function OfficialsPage() {
 
   const data = listQuery.data;
   const input =
-    "rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+    "rounded-lg border border-input bg-surface px-3 py-1.5 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/25";
+
+  const groups = useMemo<UnitGroup[]>(() => {
+    const map = new Map<string, UnitGroup>();
+    for (const o of data?.items ?? []) {
+      const key = o.organization_unit_name ?? "__unassigned__";
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          unitName: o.organization_unit_name ?? "Unassigned",
+          unitType: o.organization_unit_type,
+          items: [],
+        });
+      }
+      map.get(key)!.items.push(o);
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.key === "__unassigned__") return 1;
+      if (b.key === "__unassigned__") return -1;
+      return a.unitName.localeCompare(b.unitName);
+    });
+  }, [data]);
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="font-heading text-xl font-bold text-foreground">Officials</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">Officials</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Grouped by organisation unit.</p>
+        </div>
         {canEdit && (
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-secondary"
+            className={
+              showForm
+                ? "rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted"
+                : "rounded-lg bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] px-3 py-1.5 text-sm font-semibold text-secondary-foreground shadow-glow-gold transition-transform hover:-translate-y-0.5"
+            }
           >
-            {showForm ? "Cancel" : "Add official"}
+            {showForm ? "Cancel" : "+ Add official"}
           </button>
         )}
       </div>
@@ -125,63 +180,63 @@ export function OfficialsPage() {
         </select>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="mt-4 space-y-4">
         {listQuery.isPending && (
-          <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+          <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+            Loading…
+          </div>
         )}
         {data && data.items.length === 0 && (
-          <div className="p-6 text-sm text-muted-foreground">No officials match.</div>
+          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+            No officials match.
+          </div>
         )}
-        {data && data.items.length > 0 && (
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Designation</th>
-                <th className="px-4 py-2 font-medium">Level</th>
-                <th className="px-4 py-2 font-medium">Unit</th>
-                <th className="px-4 py-2 font-medium">Location</th>
-                <th className="px-4 py-2 font-medium">Verification</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((o) => (
-                <tr key={o.id} className="border-t border-border hover:bg-muted/50">
-                  <td className="px-4 py-2">
-                    <Link
-                      to={`/officials/${o.id}`}
-                      className="font-medium text-secondary hover:underline"
-                    >
-                      {o.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {o.designation ?? "—"}
-                  </td>
-                  <td className="px-4 py-2">{o.level ?? "—"}</td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {o.organization_unit_name ? (
-                      <>
-                        {o.organization_unit_type && (
-                          <Badge tone="neutral">{o.organization_unit_type}</Badge>
-                        )}{" "}
-                        {o.organization_unit_name}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
+        {groups.map((group) => (
+          <div
+            key={group.key}
+            className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
+              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                {group.unitName}
+                {group.unitType && (
+                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {group.unitType}
+                  </span>
+                )}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {group.items.length} official{group.items.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="divide-y divide-border">
+              {group.items.map((o) => (
+                <Link
+                  key={o.id}
+                  to={`/officials/${o.id}`}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50"
+                >
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${avatarClass(o.name)}`}
+                  >
+                    {initials(o.name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-secondary">{o.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {o.designation ?? "No designation on file"}
+                      {o.level ? ` · ${o.level}` : ""}
+                    </span>
+                  </span>
+                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                     {o.location ?? "—"}
-                  </td>
-                  <td className="px-4 py-2">
-                    <VerificationBadge status={o.verification_status} />
-                  </td>
-                </tr>
+                  </span>
+                  <VerificationBadge status={o.verification_status} />
+                </Link>
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+          </div>
+        ))}
       </div>
 
       {data && (
@@ -195,14 +250,14 @@ export function OfficialsPage() {
             <button
               disabled={offset === 0}
               onClick={() => setOffset(Math.max(0, offset - PAGE))}
-              className="rounded border border-border px-2 py-1 disabled:opacity-40"
+              className="rounded-lg border border-border px-2.5 py-1 transition-colors hover:bg-muted disabled:opacity-40"
             >
               Prev
             </button>
             <button
               disabled={offset + PAGE >= data.total}
               onClick={() => setOffset(offset + PAGE)}
-              className="rounded border border-border px-2 py-1 disabled:opacity-40"
+              className="rounded-lg border border-border px-2.5 py-1 transition-colors hover:bg-muted disabled:opacity-40"
             >
               Next
             </button>
@@ -248,12 +303,12 @@ function NewOfficialForm({
   };
 
   const input =
-    "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
+    "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
 
   return (
     <form
       onSubmit={submit}
-      className="mt-4 grid gap-3 rounded-lg border border-border bg-card shadow-sm p-4 sm:grid-cols-3"
+      className="fade-in-up mt-4 grid gap-3 rounded-xl border border-border bg-card shadow-sm p-4 sm:grid-cols-3"
     >
       <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Name</span>
@@ -339,7 +394,7 @@ function NewOfficialForm({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
         >
           {pending ? "Saving…" : "Create official"}
         </button>
