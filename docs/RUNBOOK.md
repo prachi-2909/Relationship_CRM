@@ -30,6 +30,38 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 - **Schema change:** `alembic revision -m "..."` then `alembic upgrade head`.
   Never edit a migration that has run anywhere else.
 
+## Docker
+
+`docker compose up --build` runs the whole stack: `backend` (runs
+`alembic upgrade head` on every start, then serves on :8010) and `frontend`
+(nginx, :80, proxies `/api` to `backend:8010`). The database lives on the
+`crm-data` named volume, not a bind mount.
+
+- **First run:** `docker compose exec backend python -m app.scripts.create_admin
+  --email you@eko.co.in --name "You" --password "..."`.
+- **Backup:** `docker compose exec backend sqlite3 /app/data/relationship_crm.db
+  ".backup /app/data/backup.db"`, then `docker cp
+  $(docker compose ps -q backend):/app/data/backup.db .` to pull it to the host.
+- **Restore:** stop the stack, `docker volume rm <project>_crm-data` (destructive
+  — only after confirming a good backup exists), copy the backup file onto a
+  fresh volume (e.g. via a throwaway container mounting the same volume), then
+  `docker compose up -d` again.
+- **Logs:** `docker compose logs -f backend` / `frontend`.
+- **Health:** both images define a `HEALTHCHECK` hitting `/api/v1/health` (backend)
+  and `/` (frontend) — `docker compose ps` shows current status.
+- **Config:** copy `.env.example` (repo root) to `.env` to set `SECRET_KEY`
+  and `LLM_*` for the compose stack — separate from `backend/.env`, which only
+  applies to a local non-Docker `uvicorn` run.
+- **TLS:** this stack ships no TLS termination — `nginx.conf` only listens on
+  `:80`. The session cookie defaults to `Secure`, so login will not persist
+  over plain HTTP on anything other than `http://localhost` (browsers exempt
+  that host specifically). Deploying anywhere reachable by others means
+  putting a TLS-terminating reverse proxy in front; don't set
+  `SESSION_COOKIE_SECURE=false` to work around this unless the deployment is
+  genuinely isolated with no TLS by design.
+- Same migration/schema-change discipline as above — migrations run
+  automatically on container start, so ship the migration file with the image.
+
 ## Migrations
 
 ```bash

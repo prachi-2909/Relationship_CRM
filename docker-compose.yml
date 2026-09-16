@@ -1,0 +1,45 @@
+# Local/production-shaped stack: nginx (frontend, port 80) -> FastAPI
+# (backend, port 8010) -> SQLite on a named volume. Copy .env.example to
+# .env at the repo root to override SECRET_KEY / LLM_* before deploying
+# anywhere real; sane defaults let `docker compose up` work out of the box
+# for a local look.
+#
+# SESSION_COOKIE_SECURE defaults to true here: this stack ships no TLS
+# termination of its own (nginx.conf only listens on :80), and a Secure
+# cookie is dropped by the browser over plain HTTP - fails CLOSED (login
+# simply won't persist) rather than silently shipping session cookies in
+# cleartext to anyone on the network path. `http://localhost` is exempt
+# from this by every major browser, so local use is unaffected. Deploying
+# anywhere reachable by others means putting a TLS-terminating reverse
+# proxy in front (this compose file does not provide one); only set
+# SESSION_COOKIE_SECURE=false for a deployment you specifically intend to
+# stay on an isolated, trusted network with no TLS.
+services:
+  backend:
+    build: ./backend
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: sqlite+pysqlite:////app/data/relationship_crm.db
+      CORS_ORIGINS: '["http://localhost"]'
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-stub}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    volumes:
+      - crm-data:/app/data
+    ports:
+      - "8010:8010"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  crm-data:

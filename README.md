@@ -81,6 +81,21 @@ npm run dev
 
 App at http://localhost:5173 (proxies `/api` to the backend on :8010).
 
+### With Docker
+
+```bash
+copy .env.example .env      # optional: set SECRET_KEY / LLM_* for this stack
+docker compose up --build
+docker compose exec backend python -m app.scripts.create_admin \
+    --email you@eko.co.in --name "Your Name" --password "change-me"
+```
+
+App at http://localhost (nginx serves the built frontend and proxies `/api` to
+the backend container). The backend's own port is also published at
+`:8010` (API docs at http://localhost:8010/docs). Data persists in the
+`crm-data` named volume between restarts — see `docs/RUNBOOK.md` for backup/
+restore with Docker.
+
 ### Tests
 
 ```bash
