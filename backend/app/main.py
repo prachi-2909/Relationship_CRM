@@ -7,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.router import api_router
 from .config import get_settings
+from .logging_config import configure as configure_logging
 from .scheduler import shutdown_scheduler, start_scheduler
 
+configure_logging()
 settings = get_settings()
 
 

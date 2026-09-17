@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # type again for the same relationship.
     agent_rejection_cooldown_days: int = 14
 
+    # Automated backups. enable_backups is the kill switch. backup_dir is
+    # relative to the database file's own directory (so it lands inside the
+    # same Docker volume with zero extra config); backup_retention_count
+    # caps how many nightly snapshots are kept.
+    enable_backups: bool = True
+    backup_dir: str = "backups"
+    backup_retention_count: int = 7
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

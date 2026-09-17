@@ -22,9 +22,15 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 ## Database
 
 - Location: `backend/relationship_crm.db` (git-ignored). It is the whole database.
-- **Backup:** copy the file while the server is stopped, or use
+- **Automated backup:** the nightly job (03:00 UTC) snapshots the database into
+  `backend/backups/` via SQLite's own online backup API, keeping the last
+  `BACKUP_RETENTION_COUNT` (default 7). `ENABLE_BACKUPS=false` is the kill
+  switch. `GET /api/v1/health` reports `last_backup_at` so this is
+  monitorable without a separate dashboard.
+- **Manual backup:** copy the file while the server is stopped, or use
   `sqlite3 relationship_crm.db ".backup backup.db"` while it is running.
-- **Restore:** stop the server, replace the file, start again.
+- **Restore:** stop the server, replace the file (from `backend/backups/` or
+  a manual copy), start again.
 - **Reset:** stop the server, `rm relationship_crm.db`, `alembic upgrade head`,
   re-create the admin, optionally re-seed.
 - **Schema change:** `alembic revision -m "..."` then `alembic upgrade head`.
@@ -39,14 +45,20 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 
 - **First run:** `docker compose exec backend python -m app.scripts.create_admin
   --email you@eko.co.in --name "You" --password "..."`.
-- **Backup:** `docker compose exec backend sqlite3 /app/data/relationship_crm.db
-  ".backup /app/data/backup.db"`, then `docker cp
-  $(docker compose ps -q backend):/app/data/backup.db .` to pull it to the host.
+- **Backup:** the nightly automated backup already lands at
+  `/app/data/backups/` inside the `crm-data` volume (same mechanism as local
+  dev — see "Database" above). To pull the latest one to the host:
+  `docker cp $(docker compose ps -q backend):/app/data/backups/<file> .`
+  (list files first with `docker compose exec backend ls /app/data/backups`).
+  For an on-demand snapshot: `docker compose exec backend sqlite3
+  /app/data/relationship_crm.db ".backup /app/data/backup.db"`, then `docker cp
+  $(docker compose ps -q backend):/app/data/backup.db .`.
 - **Restore:** stop the stack, `docker volume rm <project>_crm-data` (destructive
   — only after confirming a good backup exists), copy the backup file onto a
   fresh volume (e.g. via a throwaway container mounting the same volume), then
   `docker compose up -d` again.
-- **Logs:** `docker compose logs -f backend` / `frontend`.
+- **Logs:** `docker compose logs -f backend` / `frontend` — stdout is one-line
+  JSON per entry; pipe through `jq` for readability.
 - **Health:** both images define a `HEALTHCHECK` hitting `/api/v1/health` (backend)
   and `/` (frontend) — `docker compose ps` shows current status.
 - **Config:** copy `.env.example` (repo root) to `.env` to set `SECRET_KEY`
@@ -112,6 +124,9 @@ in the Relationship Brief.
 | `MOMENT_FATIGUE_DAYS` | 21 | recent-contact window that suppresses a moment |
 | `MOMENT_PROMOTION_RECENT_DAYS` | 30 | how recent a promotion date must be |
 | `OVERDUE_ESCALATION_DAYS` | 3 | (reserved for a future escalation tier) |
+| `ENABLE_BACKUPS` | true | kill switch for the nightly automated backup |
+| `BACKUP_DIR` | `backups` | backup folder, relative to the database file's directory |
+| `BACKUP_RETENTION_COUNT` | 7 | how many nightly snapshots to keep |
 
 ## Tests
 
@@ -133,5 +148,6 @@ alembic upgrade head
 
 ## Health
 
-`GET /api/v1/health` → `{status, time, database}`. `status` is `degraded` if the
-database is unreachable.
+`GET /api/v1/health` → `{status, time, database, last_backup_at}`. `status` is
+`degraded` if the database is unreachable; `last_backup_at` is `null` if
+backups are disabled or none have run yet.

@@ -4,6 +4,7 @@ def test_health_ok(client):
     body = response.json()
     assert body["status"] == "ok"
     assert body["database"] is True
+    assert "last_backup_at" in body
 
 
 def test_root(client):
