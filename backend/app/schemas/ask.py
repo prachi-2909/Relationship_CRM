@@ -21,12 +21,26 @@ class Considered(BaseModel):
     official_name: str
 
 
+class SourceExcerpt(BaseModel):
+    """A retrieved RAG passage that fed the answer - always traceable back
+    to the exact row it came from."""
+
+    relationship_id: int
+    official_name: str | None
+    source_type: str
+    source_id: int
+    snippet: str
+    score: float
+    confidence: str  # "high" | "medium" | "low" - from the similarity score only, never LLM-claimed
+
+
 class AskResponse(BaseModel):
     conversation_id: int
     answer: str
     generated_by: str
     scope: str  # "targeted" | "portfolio"
     considered: list[Considered]
+    sources: list[SourceExcerpt] = []
 
 
 class MessageOut(BaseModel):
@@ -37,6 +51,7 @@ class MessageOut(BaseModel):
     scope: str | None
     generated_by: str | None
     considered: list[Considered] | None
+    sources: list[SourceExcerpt] | None = None
     created_at: datetime
 
 

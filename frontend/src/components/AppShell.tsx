@@ -9,6 +9,9 @@ interface NavItem {
   to: string;
   label: string;
   adminOnly?: boolean;
+  /** DC's job is calls, not full relationship management - hide everything
+   * outside Dashboard + Call Intelligence from that role. */
+  hiddenForDc?: boolean;
 }
 
 interface NavGroup {
@@ -24,27 +27,29 @@ const NAV: NavGroup[] = [
   {
     heading: "System of record",
     items: [
-      { to: "/organisation", label: "Organisation" },
-      { to: "/officials", label: "Officials" },
-      { to: "/relationships", label: "Relationships" },
-      { to: "/interactions", label: "Interactions" },
-      { to: "/opportunities", label: "Opportunities" },
-      { to: "/follow-ups", label: "Follow-ups" },
+      { to: "/organisation", label: "Organisation", hiddenForDc: true },
+      { to: "/officials", label: "Officials", hiddenForDc: true },
+      { to: "/relationships", label: "Relationships", hiddenForDc: true },
+      { to: "/interactions", label: "Interactions", hiddenForDc: true },
+      { to: "/opportunities", label: "Opportunities", hiddenForDc: true },
+      { to: "/follow-ups", label: "Follow-ups", hiddenForDc: true },
     ],
   },
   {
     heading: "Intelligence",
     items: [
-      { to: "/moments", label: "Engagement Moments" },
-      { to: "/agent", label: "Autonomous Agent" },
-      { to: "/import", label: "Data Ingestion" },
+      { to: "/calls", label: "Call Intelligence" },
+      { to: "/moments", label: "Engagement Moments", hiddenForDc: true },
+      { to: "/agent", label: "Autonomous Agent", hiddenForDc: true },
+      { to: "/learning", label: "Learning Dashboard", adminOnly: true, hiddenForDc: true },
+      { to: "/import", label: "Data Ingestion", hiddenForDc: true },
     ],
   },
   {
     heading: "Admin",
     items: [
-      { to: "/users", label: "Users", adminOnly: true },
-      { to: "/audit", label: "Audit Log", adminOnly: true },
+      { to: "/users", label: "Users", adminOnly: true, hiddenForDc: true },
+      { to: "/audit", label: "Audit Log", adminOnly: true, hiddenForDc: true },
     ],
   },
 ];
@@ -80,7 +85,9 @@ export function AppShell() {
       <nav className="flex-1 overflow-y-auto p-3">
         {NAV.map((group) => {
           const items = group.items.filter(
-            (i) => !i.adminOnly || user?.role === "admin",
+            (i) =>
+              (!i.adminOnly || user?.role === "admin") &&
+              (!i.hiddenForDc || user?.role !== "dc"),
           );
           if (items.length === 0) return null;
           return (

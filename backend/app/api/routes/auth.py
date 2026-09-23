@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ...config import get_settings
 from ...db import get_db
 from ...models.user import User, UserStatus
-from ...schemas.auth import LoginRequest, UserOut
+from ...schemas.auth import LoginRequest, LoginResponse, UserOut
 from ...security.deps import get_current_user
 from ...security.passwords import verify_password
 from ...security.sessions import create_session, revoke_session
@@ -29,7 +29,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if user is None or not verify_password(payload.password, user.password_hash):
@@ -43,7 +43,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     )
     db.commit()
     _set_session_cookie(response, token)
-    return user
+    return LoginResponse(**UserOut.model_validate(user).model_dump(), token=token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

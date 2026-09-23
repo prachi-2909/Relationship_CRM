@@ -41,6 +41,7 @@ def ask(
         scope=result["scope"],
         generated_by=result["generated_by"],
         considered=result["considered"],
+        sources=result["sources"],
     )
     db.commit()
     return AskResponse(conversation_id=conv.id, **result)

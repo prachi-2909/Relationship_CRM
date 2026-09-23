@@ -45,11 +45,12 @@ from ..models.engagement_moment import EngagementMoment, MomentStatus, MomentTyp
 from ..models.opportunity import OpportunityStatus
 from ..models.relationship import Relationship
 from ..models.user import User
-from . import audit, llm
+from . import audit, knowledge, llm
 from . import brief as brief_svc
 from . import moments as moments_svc
 from . import opportunities as opportunities_svc
 from . import portfolio
+from . import strategy as strategy_svc
 from . import tasks as tasks_svc
 
 settings = get_settings()
@@ -114,10 +115,16 @@ def _llm_recommend(brief: dict, history: list[dict]) -> list[RecommendationDraft
     return parsed.recommendations[:_MAX_RECOMMENDATIONS_PER_RELATIONSHIP]
 
 
-def _stub_recommend(brief: dict) -> list[RecommendationDraft]:
+def _stub_recommend(brief: dict, *, followup_due_in_days: int | None = None) -> list[RecommendationDraft]:
     """Deterministic fallback so the agent stays usable and demoable without an
-    LLM endpoint configured, same principle as llm._stub_extract."""
+    LLM endpoint configured, same principle as llm._stub_extract.
+
+    followup_due_in_days lets a promoted/tested strategy version (see
+    strategy.py) override the default follow-up timing for a specific
+    relationship - None (no strategy assigned) keeps today's behavior.
+    """
     out: list[RecommendationDraft] = []
+    due_in_days = followup_due_in_days if followup_due_in_days is not None else 3
 
     reconnect = brief.get("reconnect_opportunity") or {}
     if reconnect.get("yes") and not brief.get("open_followups"):
@@ -126,7 +133,7 @@ def _stub_recommend(brief: dict) -> list[RecommendationDraft]:
                 type=RecommendationType.CREATE_TASK,
                 risk_tier=RiskTier.LOW,
                 reasoning=reconnect.get("reason") or brief.get("next_interaction") or "Reconnect opportunity detected.",
-                payload={"title": (brief.get("next_interaction") or "Follow up")[:280], "due_in_days": 3},
+                payload={"title": (brief.get("next_interaction") or "Follow up")[:280], "due_in_days": due_in_days},
             )
         )
 
@@ -176,7 +183,9 @@ def _stub_recommend(brief: dict) -> list[RecommendationDraft]:
     return out
 
 
-def _gather_drafts(brief: dict, history: list[dict]) -> tuple[list[RecommendationDraft], str, bool]:
+def _gather_drafts(
+    brief: dict, history: list[dict], *, followup_due_in_days: int | None = None
+) -> tuple[list[RecommendationDraft], str, bool]:
     """Returns (drafts, model label, whether an LLM call actually produced them).
     ``history`` (past decisions for this relationship) only goes to the LLM -
     the stub's dedup against it happens uniformly afterwards in
@@ -188,8 +197,12 @@ def _gather_drafts(brief: dict, history: list[dict]) -> tuple[list[Recommendatio
             drafts = []
         if drafts:
             return drafts, settings.llm_model, True
-        return _stub_recommend(brief), f"stub (fallback from {settings.llm_model})", False
-    return _stub_recommend(brief), "stub", False
+        return (
+            _stub_recommend(brief, followup_due_in_days=followup_due_in_days),
+            f"stub (fallback from {settings.llm_model})",
+            False,
+        )
+    return _stub_recommend(brief, followup_due_in_days=followup_due_in_days), "stub", False
 
 
 def _resolve_payload(db: Session, rel: Relationship, draft: RecommendationDraft) -> dict | None:
@@ -231,25 +244,43 @@ def _resolve_payload(db: Session, rel: Relationship, draft: RecommendationDraft)
     return payload
 
 
-def _evidence_for(brief: dict, rec_type: RecommendationType) -> dict:
+def _shared_evidence(brief: dict, strategy_config: dict | None) -> dict:
+    """Explainability context common to every recommendation type - what
+    semantic/strategic memory and (if assigned) strategy version fed into
+    this recommendation, so the agent stays inspectable rather than a black
+    box. Empty lists are dropped by the UI's own evidence-entry filter."""
+    return {
+        "known_facts": [f["fact_text"] for f in (brief.get("known_facts") or [])[:3]],
+        "strategic_insights": [i["statement"] for i in (brief.get("strategic_insights") or [])[:3]],
+        "strategy_config": strategy_config,
+    }
+
+
+def _evidence_for(
+    brief: dict, rec_type: RecommendationType, *, strategy_config: dict | None = None
+) -> dict:
+    shared = _shared_evidence(brief, strategy_config)
     if rec_type is RecommendationType.CREATE_TASK:
         return {
             "trigger": (brief.get("reconnect_opportunity") or {}).get("reason"),
             "days_since_last_contact": brief.get("days_since_last_contact"),
             "score": brief.get("score"),
             "band": brief.get("band"),
+            **shared,
         }
     if rec_type is RecommendationType.CREATE_OPPORTUNITY:
         return {
             "score": brief.get("score"),
             "band": brief.get("band"),
             "days_since_last_contact": brief.get("days_since_last_contact"),
+            **shared,
         }
     # only remaining type is DRAFT_MOMENT
     return {
         "score": brief.get("score"),
         "band": brief.get("band"),
         "open_moments": brief.get("open_moments"),
+        **shared,
     }
 
 
@@ -319,7 +350,15 @@ def evaluate_relationship(db: Session, rel: Relationship, run: AgentRun) -> list
     if history:
         _note_tool(run, "agent_history")
 
-    drafts, model_used, used_llm = _gather_drafts(brief, history)
+    # fully additive: None (no strategy/experiment assigned to this
+    # relationship) keeps today's hardcoded default unchanged
+    followup_due_in_days = None
+    strategy_config = strategy_svc.get_effective_config(db, rel.id)
+    if strategy_config and strategy_config.get("kind") == "rule_param":
+        followup_due_in_days = strategy_config.get("params", {}).get("followup_due_in_days")
+        _note_tool(run, "strategy_config")
+
+    drafts, model_used, used_llm = _gather_drafts(brief, history, followup_due_in_days=followup_due_in_days)
     run.model = model_used
     if used_llm:
         _note_tool(run, "llm.chat")
@@ -341,7 +380,7 @@ def evaluate_relationship(db: Session, rel: Relationship, run: AgentRun) -> list
             type=draft.type,
             risk_tier=draft.risk_tier,
             reasoning=draft.reasoning[:2000],
-            evidence=_evidence_for(brief, draft.type),
+            evidence=_evidence_for(brief, draft.type, strategy_config=strategy_config),
             payload=payload,
             status=RecommendationStatus.PENDING,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.agent_recommendation_ttl_days),
@@ -516,6 +555,10 @@ def approve(db: Session, rec: AgentRecommendation, actor: User) -> AgentRecommen
                 sender_name = owner.name if owner else None
             moment.draft_text = moments_svc.build_draft(db, moment, sender_name)
             moment.status = MomentStatus.DRAFT_READY
+            knowledge.index_source(
+                db, "moment_draft", moment.id, moment.draft_text,
+                relationship_id=moment.relationship_id, official_id=moment.official_id,
+            )
             result_ref = {"moment_id": moment.id}
         elif moment is not None:
             result_ref = {"moment_id": moment.id, "note": f"moment already {moment.status.value}"}
@@ -529,6 +572,10 @@ def approve(db: Session, rec: AgentRecommendation, actor: User) -> AgentRecommen
             source="Agent recommendation",
             status=OpportunityStatus.CONFIRMED,
             actor_id=actor.id,
+        )
+        knowledge.index_source(
+            db, "opportunity_detail", opp.id, opp.detail,
+            relationship_id=opp.relationship_id, official_id=opp.official_id,
         )
         result_ref = {"opportunity_id": opp.id}
 

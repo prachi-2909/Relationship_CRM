@@ -41,6 +41,32 @@ def test_ask_about_a_named_official_is_targeted(client, make_user, login):
     assert body["considered"] == [{"relationship_id": rel, "official_name": "Ganesh Kumar"}]
     assert body["answer"]
     assert body["generated_by"] in ("template",) or body["generated_by"].startswith("llm:")
+    assert isinstance(body["sources"], list)
+
+
+def test_ask_sources_are_scoped_to_the_matched_relationship(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin@example.com")
+    ganesh = _official(client, "Ganesh Kumar", "GM")
+    rel = _rel(client, ganesh)
+    client.post(
+        "/api/v1/interactions",
+        json={
+            "relationship_id": rel,
+            "type": "meeting",
+            "raw_notes": "Ganesh is interested in a new working capital loan for expansion.",
+        },
+    )
+
+    resp = client.post(
+        "/api/v1/ask",
+        json={"question": "Is Ganesh Kumar interested in a working capital loan for expansion?"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["scope"] == "targeted"
+    for source in body["sources"]:
+        assert source["relationship_id"] == rel
+        assert source["confidence"] in ("high", "medium", "low")
 
 
 def test_ask_generic_question_falls_back_to_portfolio(client, make_user, login):
@@ -55,6 +81,7 @@ def test_ask_generic_question_falls_back_to_portfolio(client, make_user, login):
     body = resp.json()
     assert body["scope"] == "portfolio"
     assert any(c["official_name"] == "Meera Iyer" for c in body["considered"])
+    assert body["sources"] == []  # RAG only applies to the targeted scope
 
 
 def test_ask_with_no_data_says_so_plainly(client, make_user, login):

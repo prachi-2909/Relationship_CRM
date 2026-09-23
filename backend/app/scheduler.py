@@ -16,7 +16,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models.relationship import Relationship
 from .models.task import Task, TaskStatus
-from .services import agent, audit, backup, moments, scoring
+from .services import agent, audit, backup, moments, outcomes, scoring, strategic_insight
 from .services.importance import recompute as recompute_importance
 
 logger = logging.getLogger("rcrm.scheduler")
@@ -67,16 +67,22 @@ def _nightly_job() -> None:
         n_agent_recs = 0
         if settings.enable_agent:
             n_agent_recs = agent.run_nightly(db).recommendations_created
+        n_insights = strategic_insight.recompute_all(db)
+        outcomes.create_missing_outcomes(db)
+        n_resolved = outcomes.reconcile_pending(db)
         db.commit()
         backup_path = backup.create_backup() if settings.enable_backups else None
         logger.info(
             "nightly: rescored %s relationships, escalated %s tasks, detected %s moments, "
-            "agent created %s recommendation(s) (%s expired), backup %s",
+            "agent created %s recommendation(s) (%s expired), %s strategic insight(s), "
+            "%s outcome(s) resolved, backup %s",
             n_scores,
             n_overdue,
             n_moments,
             n_agent_recs,
             n_expired,
+            n_insights,
+            n_resolved,
             backup_path or "skipped",
         )
     except Exception:  # pragma: no cover - defensive

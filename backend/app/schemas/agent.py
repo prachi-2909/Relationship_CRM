@@ -139,4 +139,36 @@ class RecommendationListResponse(BaseModel):
     offset: int
 
 
+class OutcomeOut(BaseModel):
+    id: int
+    recommendation_id: int
+    tracked_object_type: str
+    tracked_object_id: int
+    status: str
+    checked_at: datetime
+    resolved_at: datetime | None
+    detail: dict
+
+    @staticmethod
+    def of(outcome) -> "OutcomeOut":
+        return OutcomeOut(
+            id=outcome.id,
+            recommendation_id=outcome.recommendation_id,
+            tracked_object_type=outcome.tracked_object_type,
+            tracked_object_id=outcome.tracked_object_id,
+            status=outcome.status.value,
+            checked_at=outcome.checked_at,
+            resolved_at=outcome.resolved_at,
+            detail=outcome.detail,
+        )
+
+
+class EvaluationSummary(BaseModel):
+    total_decided: int
+    approval_rate: float | None
+    resolved_outcomes: int
+    positive_outcome_rate: float | None
+    median_days_to_resolution: float | None
+
+
 AgentRunDetail.model_rebuild()

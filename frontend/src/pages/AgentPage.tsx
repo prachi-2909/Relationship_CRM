@@ -7,12 +7,14 @@ import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
   AGENT_REC_TYPE_LABELS,
+  OUTCOME_STATUS_TONE,
   RECOMMENDATION_STATUS_TONE,
   RISK_TIER_TONE,
   type AgentRunListResponse,
   type AgentRunSummary,
   type RecommendationDetail,
   type RecommendationListResponse,
+  type RecommendationOutcome,
   type RecommendationStatus,
   type RecommendationType,
   type RelationshipListResponse,
@@ -24,6 +26,17 @@ const EVIDENCE_LABELS: Record<string, string> = {
   score: "Score",
   band: "Relationship band",
   open_moments: "Open moments",
+  known_facts: "Known facts (semantic memory)",
+  strategic_insights: "Strategic insights",
+  strategy_config: "Strategy version in effect",
+};
+
+const OUTCOME_STATUS_LABELS: Record<string, string> = {
+  pending: "Not yet resolved",
+  positive: "Positive",
+  negative: "Negative",
+  neutral: "Neutral",
+  inconclusive: "Inconclusive",
 };
 
 const RISK_BORDER: Record<string, string> = {
@@ -531,7 +544,19 @@ function RecommendationPanel({
             <div key={key} className="contents">
               <dt className="text-muted-foreground">{EVIDENCE_LABELS[key] ?? key}</dt>
               <dd className="text-right font-medium text-foreground">
-                {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                {Array.isArray(value) ? (
+                  <ul className="space-y-0.5">
+                    {value.map((v, i) => (
+                      <li key={i} className="text-xs">
+                        {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : typeof value === "object" ? (
+                  JSON.stringify(value)
+                ) : (
+                  String(value)
+                )}
               </dd>
             </div>
           ))}
@@ -540,6 +565,8 @@ function RecommendationPanel({
           )}
         </dl>
       </div>
+
+      <OutcomeCard recommendationId={rec.id} status={rec.status} />
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
@@ -579,6 +606,48 @@ function RecommendationPanel({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function OutcomeCard({
+  recommendationId,
+  status,
+}: {
+  recommendationId: number;
+  status: RecommendationStatus;
+}) {
+  const outcomeQuery = useQuery({
+    queryKey: ["agent", "recommendation", recommendationId, "outcome"],
+    queryFn: () => api<RecommendationOutcome | null>(`/agent/recommendations/${recommendationId}/outcome`),
+    enabled: status === "approved",
+  });
+
+  if (status !== "approved") return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Outcome
+      </div>
+      {outcomeQuery.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {outcomeQuery.data === null && (
+        <p className="text-sm text-muted-foreground">
+          Not yet tracked — this is picked up by the nightly reconciliation job.
+        </p>
+      )}
+      {outcomeQuery.data && (
+        <div className="flex items-center gap-2">
+          <Badge tone={OUTCOME_STATUS_TONE[outcomeQuery.data.status]}>
+            {OUTCOME_STATUS_LABELS[outcomeQuery.data.status] ?? outcomeQuery.data.status}
+          </Badge>
+          {outcomeQuery.data.detail?.proxy_signal ? (
+            <span className="text-xs text-muted-foreground">
+              based on a proxy signal, not a confirmed reply
+            </span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

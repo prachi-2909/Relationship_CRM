@@ -4,9 +4,11 @@ import { AgentPage } from "./pages/AgentPage";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuditLogPage } from "./pages/AuditLogPage";
+import { CallIntelligencePage } from "./pages/CallIntelligencePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InteractionsPage } from "./pages/InteractionsPage";
+import { LearningPage } from "./pages/LearningPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MomentsPage } from "./pages/MomentsPage";
 import { OfficialProfilePage } from "./pages/OfficialProfilePage";
@@ -35,9 +37,11 @@ export default function App() {
           <Route path="interactions" element={<InteractionsPage />} />
           <Route path="opportunities" element={<OpportunitiesPage />} />
           <Route path="follow-ups" element={<TasksPage />} />
+          <Route path="calls" element={<CallIntelligencePage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="moments" element={<MomentsPage />} />
           <Route path="agent" element={<AgentPage />} />
+          <Route path="learning" element={<LearningPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="audit" element={<AuditLogPage />} />
           <Route

@@ -109,6 +109,8 @@ export function OfficialProfilePage() {
         {official.status === "archived" && <Badge tone="warn">archived</Badge>}
       </div>
 
+      <CreatedViaCallNote entries={timelineQuery.data} />
+
       <ContactInfo official={official} canEdit={canEdit} onSaved={invalidate} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
@@ -756,9 +758,25 @@ function describeAction(entry: TimelineEntry): string {
       return `Field set · source "${String(entry.after?.["source"] ?? "")}"`;
     case "official_field.verify":
       return "Field verified";
+    case "call.identity_created_official":
+      return "Official created via call";
+    case "call.identity_linked":
+      return "Identity linked from a call";
+    case "call.identity_kept_unidentified":
+      return "Left unidentified from a call";
     default:
       return entry.action;
   }
+}
+
+function CreatedViaCallNote({ entries }: { entries: TimelineEntry[] | undefined }) {
+  const created = entries?.find((e) => e.action === "call.identity_created_official");
+  if (!created) return null;
+  return (
+    <p className="mt-1 text-xs text-muted-foreground">
+      Added by {created.actor_name ?? "a DC"} via call on {new Date(created.at).toLocaleDateString()}
+    </p>
+  );
 }
 
 function FieldEditor({

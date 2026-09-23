@@ -4,6 +4,8 @@ object itself; see services/agent.py for exactly what approving each
 recommendation type does.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,10 +24,13 @@ from ...models.agent import (
 )
 from ...models.relationship import Relationship
 from ...models.user import Role, User
+from ...models.outcome import RecommendationOutcome
 from ...schemas.agent import (
     AgentRunDetail,
     AgentRunListResponse,
     AgentRunSummary,
+    EvaluationSummary,
+    OutcomeOut,
     RecommendationDetail,
     RecommendationListResponse,
     RecommendationSummary,
@@ -34,6 +39,7 @@ from ...schemas.agent import (
 )
 from ...security.deps import get_current_user, require_roles
 from ...services import agent as agent_svc
+from ...services import outcomes as outcomes_svc
 
 settings = get_settings()
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -184,3 +190,49 @@ def reject_recommendation(
     db.commit()
     db.refresh(rec)
     return RecommendationDetail.of(rec)
+
+
+@router.get("/outcomes", response_model=list[OutcomeOut])
+def list_outcomes(
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    query = select(RecommendationOutcome)
+    if status_filter is not None:
+        query = query.where(RecommendationOutcome.status == status_filter)
+    rows = db.scalars(query.order_by(RecommendationOutcome.checked_at.desc()).limit(limit)).all()
+    return [OutcomeOut.of(o) for o in rows]
+
+
+@router.get("/recommendations/{rec_id}/outcome", response_model=OutcomeOut | None)
+def get_outcome(rec_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    _load_recommendation(db, rec_id)
+    outcome = db.scalar(
+        select(RecommendationOutcome).where(RecommendationOutcome.recommendation_id == rec_id)
+    )
+    return OutcomeOut.of(outcome) if outcome else None
+
+
+@router.get("/evaluation", response_model=EvaluationSummary)
+def get_evaluation(
+    type_filter: RecommendationType | None = Query(default=None, alias="type"),
+    risk_tier: RiskTier | None = None,
+    since: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    metrics = outcomes_svc.compute_metrics(db, rec_type=type_filter, risk_tier=risk_tier, since=since)
+    return EvaluationSummary(**metrics)
+
+
+@router.post("/outcomes/reconcile")
+def reconcile_outcomes(
+    db: Session = Depends(get_db),
+    _: User = Depends(_EDITORS),
+):
+    created = outcomes_svc.create_missing_outcomes(db)
+    resolved = outcomes_svc.reconcile_pending(db)
+    db.commit()
+    return {"created": created, "resolved": resolved}

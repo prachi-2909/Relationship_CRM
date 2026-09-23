@@ -92,5 +92,6 @@ class TimelineEntry(BaseModel):
     entity_type: str
     at: datetime
     actor_id: int | None
+    actor_name: str | None
     before: dict | None
     after: dict | None

@@ -5,7 +5,8 @@ hierarchy, officials, relationships, interactions, follow-ups, and draft-only
 engagement moments.
 
 This repository is **Phase 1** of the build. See `docs/phase-1-spec.html` for the
-full scope. No autonomous agent, memory store, or learning layer in this phase.
+full scope. It now also carries the autonomous agent, memory, and learning layers
+that were originally scoped as later phases — see "Beyond Phase 1" below.
 
 ## Status
 
@@ -44,7 +45,48 @@ full scope. No autonomous agent, memory store, or learning layer in this phase.
   Hindi, shared components, ~86 backend tests
 
 See `docs/phase-1-spec.html` for scope and `docs/RUNBOOK.md` for operations.
-Phase 2 (opportunities, RAG, agent, learning) is not started.
+
+## Beyond Phase 1
+
+Opportunity management, the Level 0–1 autonomous agent (observe + recommend
+only — see "Autonomous agent" below), and the RAG/memory/learning layer are
+now implemented on top of the Phase 1 foundation:
+
+- **RAG** — `/ask` and the Relationship Brief narrative are grounded in
+  retrieved passages from interaction notes, sent moment drafts, and
+  opportunity details (`GET /ask` → `sources`, each with a source row,
+  a snippet, a similarity score, and a confidence tier), not the entire
+  database dumped into the prompt. Semantic search runs on a
+  deterministic offline embedding stub by default, or any OpenAI-compatible
+  `/embeddings` endpoint (`EMBEDDING_BASE_URL`). `ENABLE_RAG=false` is the
+  kill switch.
+- **Semantic memory** — durable, open-ended facts about an official
+  (`GET/POST /officials/{id}/facts`), with conflict-aware writes: a
+  human-confirmed fact never loses to a lower-confidence auto-extraction.
+  Never hallucinated offline — the deterministic stub extracts nothing
+  rather than guessing.
+- **Strategic memory** — evidence-backed insights computed from real
+  historical data only (task completion rate, moment response rate,
+  recommendation approval rate), never an LLM guess, and never created
+  below a minimum sample size (`GET /officials/{id}/insights`).
+- **Outcome tracking & evaluation** — every approved agent recommendation
+  gets a deterministic outcome verdict once its task/moment/opportunity
+  resolves (`GET /agent/recommendations/{id}/outcome`,
+  `GET /agent/evaluation`), reconciled nightly.
+- **Strategy registry & controlled experiments** — named strategies with
+  versioned config, assigned to relationships via a controlled
+  experiment, evaluated, and promoted only by an explicit admin action
+  gated on a minimum sample size (`/strategies/*`, admin-only). An
+  unassigned relationship's agent behavior is unaffected.
+- **Learning Dashboard** (`/learning`, admin-only) — strategy registry,
+  experiments, outcomes, evaluation metrics, and human corrections
+  (rejected recommendations) in one place. The Autonomous Agent page's
+  recommendation detail also shows retrieved knowledge, semantic/strategic
+  memory, and the outcome once resolved, alongside the existing evidence.
+
+The agent remains **Level 0–1 throughout**: nothing above writes a real
+domain object without the existing human-approval gate, and no strategy is
+ever promoted automatically.
 
 ## Layout
 

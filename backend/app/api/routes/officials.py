@@ -340,12 +340,18 @@ def official_timeline(
         .order_by(AuditLog.at.desc(), AuditLog.id.desc())
         .limit(limit)
     ).all()
+    actor_ids = {r.actor_id for r in rows if r.actor_id is not None}
+    actor_names = {
+        u.id: u.name
+        for u in db.scalars(select(User).where(User.id.in_(actor_ids))).all()
+    }
     return [
         TimelineEntry(
             action=r.action,
             entity_type=r.entity_type,
             at=r.at,
             actor_id=r.actor_id,
+            actor_name=actor_names.get(r.actor_id) if r.actor_id is not None else None,
             before=r.before,
             after=r.after,
         )

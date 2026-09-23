@@ -11,8 +11,18 @@ from .sessions import resolve_session
 settings = get_settings()
 
 
+def _bearer_token(request: Request) -> str | None:
+    """A native mobile client can't read an httpOnly cookie, so it sends the same
+    session token as `Authorization: Bearer <token>` instead - same UserSession row,
+    just a second way to present it."""
+    header = request.headers.get("authorization")
+    if not header or not header.lower().startswith("bearer "):
+        return None
+    return header[7:].strip() or None
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    token = request.cookies.get(settings.session_cookie_name)
+    token = request.cookies.get(settings.session_cookie_name) or _bearer_token(request)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
 

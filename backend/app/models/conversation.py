@@ -55,5 +55,6 @@ class AskMessage(Base, TimestampMixin):
     scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
     generated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     considered: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     conversation: Mapped[AskConversation] = relationship(back_populates="messages")

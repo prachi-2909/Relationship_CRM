@@ -25,7 +25,7 @@ from ...schemas.engagement_moment import (
     SentRequest,
 )
 from ...security.deps import get_current_user, require_roles
-from ...services import audit, moments
+from ...services import audit, knowledge, moments
 
 settings = get_settings()
 router = APIRouter(prefix="/moments", tags=["moments"])
@@ -126,6 +126,10 @@ def draft_moment(
 
     moment.draft_text = moments.build_draft(db, moment, _sender_name(db, moment))
     moment.status = MomentStatus.DRAFT_READY
+    knowledge.index_source(
+        db, "moment_draft", moment.id, moment.draft_text,
+        relationship_id=moment.relationship_id, official_id=moment.official_id,
+    )
     audit.record(
         db,
         action="moment.drafted",
@@ -152,6 +156,10 @@ def edit_draft(
     moment.draft_text = payload.draft_text
     if moment.status is MomentStatus.DETECTED:
         moment.status = MomentStatus.DRAFT_READY
+    knowledge.index_source(
+        db, "moment_draft", moment.id, moment.draft_text,
+        relationship_id=moment.relationship_id, official_id=moment.official_id,
+    )
     audit.record(
         db,
         action="moment.draft_edited",

@@ -19,7 +19,7 @@ from ...schemas.opportunities import (
     OpportunityUpdate,
 )
 from ...security.deps import get_current_user, require_roles
-from ...services import audit
+from ...services import audit, knowledge
 from ...services import opportunities as opportunities_svc
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
@@ -87,6 +87,10 @@ def create_opportunity(
         status=OpportunityStatus.CONFIRMED,
         actor_id=actor.id,
     )
+    knowledge.index_source(
+        db, "opportunity_detail", opp.id, opp.detail,
+        relationship_id=opp.relationship_id, official_id=opp.official_id,
+    )
     audit.record(
         db,
         action="opportunity.create" if created else "opportunity.confirm",
@@ -122,6 +126,10 @@ def update_opportunity(
         opp.title = data["title"]
     if "detail" in data:
         opp.detail = data["detail"]
+        knowledge.index_source(
+            db, "opportunity_detail", opp.id, opp.detail,
+            relationship_id=opp.relationship_id, official_id=opp.official_id,
+        )
     if data.get("status") is not None and data["status"] is not opp.status:
         opportunities_svc.set_status(db, opp, data["status"], actor_id=actor.id)
 

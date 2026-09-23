@@ -40,6 +40,16 @@ class BriefOpportunity(BaseModel):
     days_since_activity: int
 
 
+class KnownFact(BaseModel):
+    fact_text: str
+    verification_state: str
+
+
+class StrategicInsightOut(BaseModel):
+    statement: str
+    sample_size: int
+
+
 class ReconnectOpportunity(BaseModel):
     yes: bool
     reason: str
@@ -90,3 +100,5 @@ class RelationshipBrief(BaseModel):
     upcoming_dates: list[BriefDate]
     open_opportunities: list[BriefOpportunity]
     recent_interactions: list[BriefInteraction]
+    known_facts: list[KnownFact]
+    strategic_insights: list[StrategicInsightOut]

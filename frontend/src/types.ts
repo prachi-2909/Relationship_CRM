@@ -1,4 +1,4 @@
-export type Role = "admin" | "relationship_manager" | "approver_viewer";
+export type Role = "admin" | "relationship_manager" | "approver_viewer" | "dc";
 export type UserStatus = "active" | "disabled";
 
 export interface User {
@@ -13,6 +13,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   relationship_manager: "Relationship Manager",
   approver_viewer: "Approver / Viewer",
+  dc: "DC",
 };
 
 // --- organisation ---------------------------------------------------------
@@ -110,6 +111,7 @@ export interface TimelineEntry {
   entity_type: string;
   at: string;
   actor_id: number | null;
+  actor_name: string | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
 }
@@ -692,6 +694,110 @@ export interface RecommendationListResponse {
   offset: number;
 }
 
+// --- outcomes & learning --------------------------------------------------
+// What happened after a recommendation was approved (Phase 11). Never an
+// LLM guess - a deterministic verdict computed from the tracked task/
+// moment/opportunity's real state.
+
+export type OutcomeStatus = "pending" | "positive" | "negative" | "neutral" | "inconclusive";
+
+export const OUTCOME_STATUS_TONE: Record<OutcomeStatus, "neutral" | "primary" | "good" | "warn" | "danger"> = {
+  pending: "neutral",
+  positive: "good",
+  negative: "danger",
+  neutral: "warn",
+  inconclusive: "neutral",
+};
+
+export interface RecommendationOutcome {
+  id: number;
+  recommendation_id: number;
+  tracked_object_type: string;
+  tracked_object_id: number;
+  status: OutcomeStatus;
+  checked_at: string;
+  resolved_at: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface EvaluationSummary {
+  total_decided: number;
+  approval_rate: number | null;
+  resolved_outcomes: number;
+  positive_outcome_rate: number | null;
+  median_days_to_resolution: number | null;
+}
+
+export type StrategyStatus = "draft" | "testing" | "active" | "retired";
+export type StrategyVersionStatus = "draft" | "testing" | "active" | "retired" | "rejected";
+export type ExperimentStatus = "draft" | "running" | "completed" | "aborted";
+
+export const STRATEGY_STATUS_TONE: Record<StrategyStatus, "neutral" | "primary" | "good" | "warn"> = {
+  draft: "neutral",
+  testing: "primary",
+  active: "good",
+  retired: "warn",
+};
+
+export const STRATEGY_VERSION_STATUS_TONE: Record<
+  StrategyVersionStatus,
+  "neutral" | "primary" | "good" | "warn" | "danger"
+> = {
+  draft: "neutral",
+  testing: "primary",
+  active: "good",
+  retired: "warn",
+  rejected: "danger",
+};
+
+export const EXPERIMENT_STATUS_TONE: Record<ExperimentStatus, "neutral" | "primary" | "good" | "warn"> = {
+  draft: "neutral",
+  running: "primary",
+  completed: "good",
+  aborted: "warn",
+};
+
+export interface StrategyVersionOut {
+  id: number;
+  strategy_id: number;
+  version: number;
+  config: Record<string, unknown>;
+  evaluation_metrics: Record<string, unknown> | null;
+  experiment_metadata: Record<string, unknown> | null;
+  status: StrategyVersionStatus;
+  created_by: number | null;
+  approved_by: number | null;
+  approved_at: string | null;
+  created_at: string;
+}
+
+export interface StrategyOut {
+  id: number;
+  strategy_id: string;
+  name: string;
+  category: string;
+  current_version_id: number | null;
+  status: StrategyStatus;
+  versions: StrategyVersionOut[];
+}
+
+export interface ExperimentAssignmentOut {
+  relationship_id: number;
+  arm: "control" | "treatment";
+}
+
+export interface ExperimentOut {
+  id: number;
+  strategy_id: number;
+  control_version_id: number;
+  treatment_version_id: number;
+  status: ExperimentStatus;
+  started_at: string | null;
+  ended_at: string | null;
+  minimum_sample_size: number;
+  assignments: ExperimentAssignmentOut[];
+}
+
 // --- audit log --------------------------------------------------------
 
 export interface AuditEntry {
@@ -725,4 +831,79 @@ export interface AskResponse {
   generated_by: string;
   scope: "targeted" | "portfolio";
   considered: AskConsidered[];
+}
+
+// --- call intelligence ----------------------------------------------------
+// A Call Session is the technical event; it only becomes a CRM Interaction
+// once a human (the DC) reviews and confirms. "RECORDING FAIL != INTERACTION
+// FAIL" - a call with no recording is just as loggable via voice note/manual
+// text, never a broken/second-class path.
+
+export type CallDirection = "inbound" | "outbound" | "internal";
+export type CallProcessingStatus =
+  | "initiated" | "ringing" | "connected" | "ended" | "recording" | "no_recording"
+  | "upload_pending" | "uploaded" | "transcribing" | "analyzing" | "review_required"
+  | "approved" | "crm_logged" | "cancelled" | "recording_unavailable" | "upload_failed"
+  | "transcription_failed" | "analysis_failed" | "review_rejected" | "crm_write_failed";
+export type CallIdentityStatus =
+  | "registered" | "unregistered" | "possible_identity" | "verified_new_official" | "unidentified";
+
+export const CALL_PROCESSING_STATUS_TONE: Record<CallProcessingStatus, "neutral" | "primary" | "good" | "warn" | "danger"> = {
+  initiated: "neutral", ringing: "neutral", connected: "neutral", ended: "neutral",
+  recording: "primary", no_recording: "warn", upload_pending: "neutral", uploaded: "neutral",
+  transcribing: "primary", analyzing: "primary", review_required: "primary", approved: "good",
+  crm_logged: "good", cancelled: "neutral", recording_unavailable: "warn", upload_failed: "danger",
+  transcription_failed: "danger", analysis_failed: "danger", review_rejected: "danger",
+  crm_write_failed: "danger",
+};
+
+export const CALL_IDENTITY_STATUS_TONE: Record<CallIdentityStatus, "neutral" | "primary" | "good" | "warn" | "danger"> = {
+  registered: "good", unregistered: "warn", possible_identity: "primary",
+  verified_new_official: "good", unidentified: "neutral",
+};
+
+export interface CallSessionSummary {
+  id: number;
+  dc_user_id: number;
+  dc_user_name: string;
+  direction: CallDirection;
+  phone_ref: string;
+  official_id: number | null;
+  official_name: string | null;
+  relationship_id: number | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  recording_status: string;
+  identity_status: CallIdentityStatus;
+  processing_status: CallProcessingStatus;
+  reminder_at: string | null;
+}
+
+export interface CallBrief {
+  summary?: string;
+  key_points?: string[];
+  decisions?: string[];
+  commitments?: string[];
+  action_items?: string[];
+  opportunities?: string[];
+  relationship_signals?: string[];
+  suggested_next_interaction?: string;
+}
+
+export interface CallSessionDetail extends CallSessionSummary {
+  transcript_text: string | null;
+  transcript_source: string | null;
+  brief: CallBrief | null;
+  recording_status_detail: string | null;
+}
+
+export interface CallSessionListResponse {
+  items: CallSessionSummary[];
+  total: number;
+}
+
+export interface DcOption {
+  id: number;
+  name: string;
 }

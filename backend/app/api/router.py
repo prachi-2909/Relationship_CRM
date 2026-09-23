@@ -7,16 +7,20 @@ from .routes import (
     ask,
     audit_logs,
     auth,
+    call_intelligence,
     connections,
     dashboard,
     health,
     imports,
     interactions,
+    knowledge,
+    memory,
     moments,
     officials,
     opportunities,
     organization,
     relationships,
+    strategies,
     tasks,
     users,
 )
@@ -37,4 +41,8 @@ api_router.include_router(opportunities.router)
 api_router.include_router(tasks.router)
 api_router.include_router(imports.router)
 api_router.include_router(moments.router)
+api_router.include_router(memory.router)
+api_router.include_router(knowledge.router)
+api_router.include_router(strategies.router)
+api_router.include_router(call_intelligence.router)
 api_router.include_router(audit_logs.router)

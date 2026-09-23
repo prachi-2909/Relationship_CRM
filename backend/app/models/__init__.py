@@ -12,11 +12,23 @@ from .agent import (
 )
 from .audit import AuditLog
 from .base import Base, TimestampMixin
+from .call_intelligence import (
+    CallAIAnalysis,
+    CallIdentityCandidate,
+    CallRecording,
+    CallReview,
+    CallSession,
+    CallSessionStatus,
+    CallTranscript,
+    CallVoiceNote,
+    IdentityStatus,
+)
 from .connection import Connection, ConnectionStatus, ConnectionType
 from .conversation import AskConversation, AskMessage, MessageRole
 from .data_import import DataImport, ImportRow, ImportStatus, RowAction
 from .engagement_moment import EngagementMoment, MomentStatus, MomentType
 from .interaction import Direction, Interaction, InteractionType, Sentiment
+from .knowledge import KnowledgeChunk
 from .official import (
     FieldVerification,
     Official,
@@ -35,6 +47,7 @@ from .opportunity import (
 )
 from .org_unit_type import OrgUnitType
 from .organization_unit import OrganizationUnit, OrgUnitStatus
+from .outcome import OutcomeStatus, RecommendationOutcome
 from .relationship import (
     Importance,
     Relationship,
@@ -42,7 +55,19 @@ from .relationship import (
     RelationshipStatus,
     RiskLevel,
 )
+from .semantic_memory import SemanticMemoryFact, SemanticVerificationState
 from .session import UserSession
+from .strategic_insight import StrategicInsight
+from .strategy import (
+    Experiment,
+    ExperimentArm,
+    ExperimentAssignment,
+    ExperimentStatus,
+    Strategy,
+    StrategyStatus,
+    StrategyVersion,
+    StrategyVersionStatus,
+)
 from .task import Task, TaskStatus
 from .user import Role, User, UserStatus
 
@@ -102,4 +127,27 @@ __all__ = [
     "OpportunityStatus",
     "OpportunityStage",
     "OpportunityActivityType",
+    "KnowledgeChunk",
+    "SemanticMemoryFact",
+    "SemanticVerificationState",
+    "StrategicInsight",
+    "RecommendationOutcome",
+    "OutcomeStatus",
+    "Strategy",
+    "StrategyStatus",
+    "StrategyVersion",
+    "StrategyVersionStatus",
+    "Experiment",
+    "ExperimentStatus",
+    "ExperimentAssignment",
+    "ExperimentArm",
+    "CallSession",
+    "CallSessionStatus",
+    "IdentityStatus",
+    "CallRecording",
+    "CallVoiceNote",
+    "CallTranscript",
+    "CallAIAnalysis",
+    "CallIdentityCandidate",
+    "CallReview",
 ]

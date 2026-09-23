@@ -65,6 +65,39 @@ class Settings(BaseSettings):
     backup_dir: str = "backups"
     backup_retention_count: int = 7
 
+    # RAG (retrieval-augmented /ask and Brief narratives). enable_rag is the
+    # kill switch. embedding_base_url falls back to llm_base_url when unset,
+    # so a single configured endpoint covers both chat and embeddings unless
+    # they genuinely differ.
+    enable_rag: bool = True
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
+    embedding_model: str = "stub"
+    embedding_dim: int = 256
+    rag_top_k: int = 5
+    rag_max_chars_budget: int = 4000
+    rag_min_similarity: float = 0.15
+
+    # Semantic memory: durable facts about an official, extracted from
+    # interaction text. Strategic memory: evidence-backed insights computed
+    # from real outcome data (never an LLM guess). Both kill-switched
+    # independently of the agent/RAG switches above.
+    enable_semantic_memory: bool = True
+    enable_strategic_insights: bool = True
+    strategic_insight_min_sample: int = 5
+
+    # Mobile Call Intelligence. enable_call_intelligence is the kill switch.
+    # Knowlarity/transcription are unset by default -> every call to them is a
+    # graceful no-op/stub, same offline-first pattern as llm_base_url.
+    enable_call_intelligence: bool = True
+    knowlarity_base_url: str | None = None
+    knowlarity_api_key: str | None = None
+    knowlarity_number: str | None = None
+    knowlarity_webhook_secret: str | None = None
+    transcription_base_url: str | None = None
+    transcription_api_key: str | None = None
+    call_pending_reminder_hours: int = 4
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

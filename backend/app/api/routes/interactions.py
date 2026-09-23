@@ -21,9 +21,10 @@ from ...schemas.interaction import (
     ParsedEmailOut,
 )
 from ...security.deps import get_current_user, require_roles
-from ...services import audit, scoring
+from ...services import audit, knowledge, scoring
 from ...services import connections as connections_svc
 from ...services import opportunities as opportunities_svc
+from ...services import semantic_memory as semantic_memory_svc
 from ...services.importance import recompute as recompute_importance
 from ...services.email_parse import parse_email
 from ...services.llm import extract_interaction
@@ -152,6 +153,14 @@ def create_interaction(
     connections_svc.suggest_from_interaction(db, interaction)
     # anything that reads as a potential opportunity -> suggested, for a human to confirm
     opportunities_svc.suggest_from_interaction(db, interaction)
+    knowledge.index_source(
+        db, "interaction", interaction.id, interaction.raw_notes,
+        relationship_id=rel.id, official_id=rel.official_id,
+    )
+    semantic_memory_svc.extract_and_store(
+        db, official_id=rel.official_id, relationship_id=rel.id,
+        text=interaction.raw_notes, source_interaction_id=interaction.id,
+    )
 
     recompute_importance(db, rel)
     scoring.recompute_and_store(db, rel, reason="interaction logged")
@@ -205,6 +214,11 @@ def update_interaction(
                 rescore = True
 
     db.flush()
+    if "raw_notes" in data:
+        knowledge.index_source(
+            db, "interaction", interaction.id, interaction.raw_notes,
+            relationship_id=interaction.relationship_id, official_id=interaction.official_id,
+        )
     if rescore or "sentiment" in data:
         recompute_importance(db, interaction.relationship_ref)
     if rescore:

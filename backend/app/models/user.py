@@ -13,6 +13,7 @@ class Role(str, enum.Enum):
     ADMIN = "admin"
     RELATIONSHIP_MANAGER = "relationship_manager"
     APPROVER_VIEWER = "approver_viewer"
+    DC = "dc"
 
 
 class UserStatus(str, enum.Enum):

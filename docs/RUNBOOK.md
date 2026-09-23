@@ -127,11 +127,51 @@ in the Relationship Brief.
 | `ENABLE_BACKUPS` | true | kill switch for the nightly automated backup |
 | `BACKUP_DIR` | `backups` | backup folder, relative to the database file's directory |
 | `BACKUP_RETENTION_COUNT` | 7 | how many nightly snapshots to keep |
+| `ENABLE_RAG` | true | kill switch for RAG retrieval in `/ask` and the Brief narrative |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | (unset) → falls back to `LLM_BASE_URL`, then the offline stub | OpenAI-compatible `/embeddings` endpoint |
+| `EMBEDDING_DIM` | 256 | dimension of the offline stub's hashed vectors only |
+| `RAG_TOP_K` | 5 | max retrieved chunks per `/ask` answer |
+| `RAG_MAX_CHARS_BUDGET` | 4000 | context-size cap for retrieved excerpts |
+| `RAG_MIN_SIMILARITY` | 0.15 | cosine-similarity floor below which a chunk is dropped |
+| `ENABLE_SEMANTIC_MEMORY` | true | kill switch for fact extraction from interaction notes |
+| `ENABLE_STRATEGIC_INSIGHTS` | true | kill switch for the nightly strategic-insight recompute |
+| `STRATEGIC_INSIGHT_MIN_SAMPLE` | 5 | minimum sample size before a strategic insight is created |
+
+## RAG, memory, and learning
+
+- **RAG** — `services/embeddings.py` mirrors `services/llm.py`'s shape exactly
+  (real endpoint if configured, deterministic offline stub otherwise, never
+  raises). Chunks come from `Interaction.raw_notes`, sent
+  `EngagementMoment.draft_text`, and `Opportunity.detail` — there is no
+  separate "document" model. `POST /api/v1/knowledge/reindex` (admin) rebuilds
+  the whole index, e.g. after changing the embedding model.
+- **Semantic memory** — `GET/POST /api/v1/officials/{id}/facts`,
+  `.../facts/{fact_id}/verify`, `.../facts/{fact_id}/reject`. A
+  human-confirmed fact is never silently overwritten by a lower-confidence
+  auto-extraction; conflicts are recorded in the audit log
+  (`semantic_memory.fact.conflict_ignored`).
+- **Strategic memory** — `GET /api/v1/officials/{id}/insights`,
+  `POST .../insights/recompute` (admin). Response-rate insights use a
+  documented proxy signal (a subsequent inbound interaction stands in for a
+  confirmed reply) — always labeled `proxy_signal: true` in the evidence,
+  never presented as ground truth.
+- **Outcome tracking** — `GET /api/v1/agent/recommendations/{id}/outcome`,
+  `GET /api/v1/agent/outcomes`, `GET /api/v1/agent/evaluation`,
+  `POST /api/v1/agent/outcomes/reconcile` (admin/RM, on-demand — the nightly
+  job runs the same reconciliation automatically).
+- **Strategy registry & experiments** — `/api/v1/strategies/*` (admin-only).
+  A strategy version can only be promoted from an experiment that has
+  `status=completed` and at least `minimum_sample_size` relationships in the
+  treatment arm (default 20) — promotion is always one explicit admin
+  action, never automatic. Today only one strategy is wired to actual agent
+  behavior — `task_followup_timing`, which overrides the follow-up
+  `due_in_days` the stub recommender uses (`services/strategy.py`); an
+  unassigned relationship's behavior is unaffected.
 
 ## Tests
 
 ```bash
-pytest -q                                  # ~66 tests, in-memory SQLite
+pytest -q                                  # 240+ tests, in-memory SQLite
 TEST_DATABASE_URL=postgresql+psycopg://... pytest -q   # against Postgres
 ```
 

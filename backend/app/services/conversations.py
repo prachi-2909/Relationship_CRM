@@ -79,6 +79,7 @@ def append_turn(
     scope: str,
     generated_by: str,
     considered: list[dict],
+    sources: list[dict] | None = None,
 ) -> None:
     if conv.title is None:
         conv.title = question[:200]
@@ -91,6 +92,7 @@ def append_turn(
             scope=scope,
             generated_by=generated_by,
             considered=considered,
+            sources=sources,
         )
     )
     # appending a child message doesn't touch the parent row on its own -
