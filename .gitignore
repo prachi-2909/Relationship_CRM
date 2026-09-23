@@ -17,6 +17,7 @@ secrets.*
 *.sqlite3
 backend/data/
 backend/backups/
+backend/media/
 
 # ---- Python ---------------------------------------------------------------
 __pycache__/
@@ -41,6 +42,15 @@ frontend/.vite/
 *.tsbuildinfo
 npm-debug.log*
 yarn-error.log*
+
+# ---- Android ------------------------------------------------------------
+android/local.properties
+android/.gradle/
+android/.kotlin/
+android/app/build/
+android/*.iml
+*.jks
+*.keystore
 
 # ---- Tooling / editors / OS ------------------------------------------
 .claude/

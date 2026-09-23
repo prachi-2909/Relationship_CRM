@@ -97,6 +97,11 @@ class Settings(BaseSettings):
     transcription_base_url: str | None = None
     transcription_api_key: str | None = None
     call_pending_reminder_hours: int = 4
+    # Local disk storage for uploaded DC voice notes, relative to the
+    # database file's own directory (same convention as backup_dir). Swap
+    # for real object storage later purely via config - the rest of the
+    # pipeline only ever deals in a secure_object_ref string.
+    media_dir: str = "media"
 
     @property
     def is_sqlite(self) -> bool:

@@ -21,6 +21,7 @@ from ..models.call_intelligence import (
     CallSession,
     CallSessionStatus,
     CallTranscript,
+    CallVoiceNote,
     IdentityStatus,
 )
 from ..models.interaction import Direction, Interaction, InteractionType
@@ -28,8 +29,10 @@ from ..models.official import Official, OfficialStatus
 from ..models.relationship import Relationship
 from ..models.user import User
 from . import audit
+from . import call_transcription
 from . import connections as connections_svc
 from . import knowledge
+from . import media_storage
 from . import opportunities as opportunities_svc
 from . import phone as phone_svc
 from . import scoring
@@ -113,6 +116,24 @@ def _find_or_create_session_for_webhook(db: Session, payload: dict) -> CallSessi
     return call
 
 
+def _attach_transcript_and_brief(db: Session, call: CallSession, *, source_type: str, audio_ref: str) -> bool:
+    """Transcribes an audio_ref (a Knowlarity recording URL or an uploaded
+    voice note path) and, if that yields text, attaches a CallTranscript +
+    AI brief. Returns False (never raises) when no transcription endpoint is
+    configured or it fails - the call is left exactly as it was, so the DC
+    can still fall back to manual text. RECORDING FAIL != INTERACTION FAIL."""
+    result = call_transcription.transcribe(audio_ref)
+    if result is None or not result.text.strip():
+        return False
+    db.add(CallTranscript(
+        call_session_id=call.id, source_type=source_type, provider=result.provider,
+        language=result.language, text=result.text, confidence=result.confidence,
+    ))
+    brief = generate_brief(db, call, result.text)
+    db.add(CallAIAnalysis(call_session_id=call.id, model_version=settings.llm_model, analysis_json=brief))
+    return True
+
+
 def ingest_webhook(db: Session, payload: dict) -> CallSession | None:
     """Records a Knowlarity call-completion event: metadata + a recording
     reference. Never writes an Interaction directly - only ever updates the
@@ -137,6 +158,7 @@ def ingest_webhook(db: Session, payload: dict) -> CallSession | None:
             )
         )
         call.recording_status = CallSessionStatus.RECORDING
+        _attach_transcript_and_brief(db, call, source_type="recording", audio_ref=recording_url)
     else:
         call.recording_status = CallSessionStatus.NO_RECORDING
     call.processing_status = CallSessionStatus.REVIEW_REQUIRED
@@ -206,6 +228,24 @@ def set_manual_text(db: Session, call: CallSession, text: str, actor: User) -> C
     db.add(CallAIAnalysis(call_session_id=call.id, model_version=settings.llm_model, analysis_json=brief))
     call.processing_status = CallSessionStatus.REVIEW_REQUIRED
     db.flush()
+    return call
+
+
+def submit_voice_note(db: Session, call: CallSession, *, audio_bytes: bytes, filename: str, actor: User) -> CallSession:
+    """DC's own voice-note recap of a call that had no Knowlarity recording.
+    Attempts transcription; if that's unavailable the voice note is still
+    saved and the call stays in review_required so the DC can add manual
+    text instead - never a dead end."""
+    ref = media_storage.save_upload("voice_notes", filename, audio_bytes)
+    db.add(CallVoiceNote(call_session_id=call.id, dc_user_id=actor.id, secure_object_ref=ref))
+    transcribed = _attach_transcript_and_brief(db, call, source_type="voice_note", audio_ref=ref)
+    call.recording_status = CallSessionStatus.UPLOADED if transcribed else CallSessionStatus.TRANSCRIPTION_FAILED
+    call.processing_status = CallSessionStatus.REVIEW_REQUIRED
+    db.flush()
+    audit.record(
+        db, action="call.voice_note_submitted", entity_type="call_session", entity_id=call.id,
+        actor_id=actor.id, after={"transcribed": transcribed},
+    )
     return call
 
 

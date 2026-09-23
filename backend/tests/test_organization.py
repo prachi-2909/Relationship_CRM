@@ -151,6 +151,69 @@ def test_hierarchy_allows_skipping_a_level(client, make_user, login):
     assert resp.status_code == 201
 
 
+def test_units_list_includes_child_and_official_counts(client, db, make_user, login, make_official):
+    _as(make_user, login, Role.ADMIN, "admin-counts@example.com")
+    cc = client.post(
+        "/api/v1/organization/units", json={"name": "HQ", "type_code": "CC"}
+    ).json()
+    rbo = client.post(
+        "/api/v1/organization/units",
+        json={"name": "Pune RBO", "type_code": "RBO", "parent_id": cc["id"]},
+    ).json()
+    client.post(
+        "/api/v1/organization/units",
+        json={"name": "FC Road Branch", "type_code": "BRANCH", "parent_id": rbo["id"]},
+    )
+    official = make_official(name="Someone")
+    official.organization_unit_id = rbo["id"]
+    db.commit()
+
+    resp = client.get(f"/api/v1/organization/units?parent_id={cc['id']}")
+    assert resp.status_code == 200
+    [row] = resp.json()
+    assert row["name"] == "Pune RBO"
+    assert row["child_count"] == 1
+    assert row["official_count"] == 1
+
+
+def test_units_roots_only(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin-roots@example.com")
+    client.post("/api/v1/organization/units", json={"name": "HQ", "type_code": "CC"})
+    client.post("/api/v1/organization/units", json={"name": "Other Root", "type_code": "CC"})
+
+    resp = client.get("/api/v1/organization/units?roots_only=true")
+    assert resp.status_code == 200
+    names = {u["name"] for u in resp.json()}
+    assert names == {"HQ", "Other Root"}
+
+
+def test_unit_stats_rolls_up_descendants(client, db, make_user, login, make_official):
+    _as(make_user, login, Role.ADMIN, "admin-stats@example.com")
+    cc = client.post(
+        "/api/v1/organization/units", json={"name": "HQ", "type_code": "CC"}
+    ).json()
+    rbo = client.post(
+        "/api/v1/organization/units",
+        json={"name": "Pune RBO", "type_code": "RBO", "parent_id": cc["id"]},
+    ).json()
+    branch = client.post(
+        "/api/v1/organization/units",
+        json={"name": "FC Road Branch", "type_code": "BRANCH", "parent_id": rbo["id"]},
+    ).json()
+    direct_official = make_official(name="On the RBO itself")
+    direct_official.organization_unit_id = rbo["id"]
+    branch_official = make_official(name="On the branch")
+    branch_official.organization_unit_id = branch["id"]
+    db.commit()
+
+    resp = client.get(f"/api/v1/organization/units/{rbo['id']}/stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["direct_officials"] == 1
+    assert body["total_officials"] == 2
+    assert body["total_units"] == 1
+
+
 def test_moving_a_unit_enforces_the_hierarchy_too(client, make_user, login):
     _as(make_user, login, Role.ADMIN, "admin@example.com")
     hq = client.post(

@@ -4,7 +4,7 @@ their own call_session rows (dc_user_id == actor.id) - enforced in every
 query here, not just via role, per AC-SEC-002.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -146,6 +146,25 @@ def list_history(
 @router.get("/calls/{call_id}", response_model=CallSessionDetail)
 def get_call(call_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     return CallSessionDetail.of(_load_scoped(db, call_id, actor))
+
+
+_MAX_VOICE_NOTE_BYTES = 20 * 1024 * 1024
+
+
+@router.post("/calls/{call_id}/voice-note", response_model=CallSessionDetail)
+async def voice_note(
+    call_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), actor: User = Depends(_EDITORS)
+):
+    call = _load_scoped(db, call_id, actor)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Empty file")
+    if len(data) > _MAX_VOICE_NOTE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Voice note too large")
+    call_svc.submit_voice_note(db, call, audio_bytes=data, filename=file.filename or "voice-note.m4a", actor=actor)
+    db.commit()
+    db.refresh(call)
+    return CallSessionDetail.of(call)
 
 
 @router.post("/calls/{call_id}/manual-text", response_model=CallSessionDetail)

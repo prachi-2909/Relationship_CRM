@@ -12,6 +12,8 @@ from ...models.user import Role, User
 from ...schemas.organization import (
     UnitCreate,
     UnitOut,
+    UnitStats,
+    UnitSummary,
     UnitTreeNode,
     UnitTypeCreate,
     UnitTypeOut,
@@ -126,22 +128,86 @@ def _descendant_ids(db: Session, root_id: int) -> set[int]:
     return seen
 
 
-@router.get("/units", response_model=list[UnitOut])
+@router.get("/units", response_model=list[UnitSummary])
 def list_units(
     status_filter: OrgUnitStatus | None = Query(default=None, alias="status"),
     type_code: str | None = None,
     parent_id: int | None = None,
+    roots_only: bool = False,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    """A drill-down UI's bread and butter: list units at one level, each
+    annotated with its own child/official counts so the UI can show "40
+    RBOs" or "12 branches, 3 officials" without an extra request per row."""
     stmt = select(OrganizationUnit).order_by(OrganizationUnit.name)
     if status_filter is not None:
         stmt = stmt.where(OrganizationUnit.status == status_filter)
     if type_code is not None:
         stmt = stmt.where(OrganizationUnit.type_code == type_code)
-    if parent_id is not None:
+    if roots_only:
+        stmt = stmt.where(OrganizationUnit.parent_id.is_(None))
+    elif parent_id is not None:
         stmt = stmt.where(OrganizationUnit.parent_id == parent_id)
-    return list(db.scalars(stmt))
+    units = list(db.scalars(stmt))
+    if not units:
+        return []
+
+    ids = [u.id for u in units]
+    child_counts = dict(
+        db.execute(
+            select(OrganizationUnit.parent_id, func.count())
+            .where(OrganizationUnit.parent_id.in_(ids))
+            .where(OrganizationUnit.status == OrgUnitStatus.ACTIVE)
+            .group_by(OrganizationUnit.parent_id)
+        ).all()
+    )
+    official_counts = dict(
+        db.execute(
+            select(Official.organization_unit_id, func.count())
+            .where(Official.organization_unit_id.in_(ids))
+            .where(Official.status == OfficialStatus.ACTIVE)
+            .group_by(Official.organization_unit_id)
+        ).all()
+    )
+    return [
+        UnitSummary(
+            **UnitOut.model_validate(u).model_dump(),
+            child_count=child_counts.get(u.id, 0),
+            official_count=official_counts.get(u.id, 0),
+        )
+        for u in units
+    ]
+
+
+@router.get("/units/{unit_id}/stats", response_model=UnitStats)
+def unit_stats(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Header stats for a drill-down view: officials directly on this unit
+    vs. the total across it and every descendant unit."""
+    if db.get(OrganizationUnit, unit_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unit not found")
+    descendants = _descendant_ids(db, unit_id)
+    all_ids = descendants | {unit_id}
+    direct = db.scalar(
+        select(func.count())
+        .select_from(Official)
+        .where(Official.organization_unit_id == unit_id)
+        .where(Official.status == OfficialStatus.ACTIVE)
+    ) or 0
+    total = db.scalar(
+        select(func.count())
+        .select_from(Official)
+        .where(Official.organization_unit_id.in_(all_ids))
+        .where(Official.status == OfficialStatus.ACTIVE)
+    ) or 0
+    return UnitStats(
+        unit_id=unit_id, direct_officials=direct, total_officials=total,
+        total_units=len(descendants),
+    )
 
 
 @router.get("/units/tree", response_model=list[UnitTreeNode])

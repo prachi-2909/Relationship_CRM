@@ -121,6 +121,78 @@ def test_confirm_and_log_creates_exactly_one_interaction_without_reextraction(db
     assert count == 1
 
 
+def test_submit_voice_note_saves_file_and_stays_reviewable(db, tmp_path, make_official, make_user, monkeypatch):
+    from app.services import media_storage
+
+    monkeypatch.setattr(media_storage.settings, "media_dir", str(tmp_path))
+    official = make_official(name="Voice Note Target")
+    rel = Relationship(official_id=official.id)
+    db.add(rel)
+    dc = make_user(email="dc-voice1@example.com", role=Role.DC)
+    db.commit()
+
+    call = CallSession(
+        dc_user_id=dc.id, direction=Direction.OUTBOUND, phone_ref="9876543210",
+        official_id=official.id, relationship_id=rel.id, started_at=datetime.now(timezone.utc),
+    )
+    db.add(call)
+    db.commit()
+
+    call_svc.submit_voice_note(db, call, audio_bytes=b"fake-audio-bytes", filename="note.m4a", actor=dc)
+    db.commit()
+
+    assert call.voice_note is not None
+    assert call.voice_note.secure_object_ref
+    # no transcription endpoint configured in tests -> graceful, no transcript,
+    # but the call stays actionable (never a dead end) for a manual-text fallback
+    assert call.transcript is None
+    assert call.recording_status == CallSessionStatus.TRANSCRIPTION_FAILED
+    assert call.processing_status == CallSessionStatus.REVIEW_REQUIRED
+
+
+def test_voice_note_upload_via_api(client, make_user, login):
+    _as(make_user, login, Role.ADMIN, "admin-voice-setup@example.com")
+    official_id = _official(client, "Voice API Target", phone="9666666666")
+    _rel(client, official_id)
+    client.post("/api/v1/auth/logout")
+
+    _as(make_user, login, Role.DC, "dc-voice2@example.com")
+    call_id = client.post("/api/v1/calls/outgoing", json={"official_id": official_id}).json()["id"]
+
+    resp = client.post(
+        f"/api/v1/calls/{call_id}/voice-note",
+        files={"file": ("note.m4a", b"fake-audio-bytes", "audio/mp4")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["recording_status"] == "transcription_failed"
+    assert resp.json()["processing_status"] == "review_required"
+
+
+def test_webhook_with_recording_but_no_transcription_endpoint_stays_reviewable(client, make_user, login, monkeypatch):
+    from app.api.routes import call_intelligence as route_module
+
+    monkeypatch.setattr(route_module.settings, "knowlarity_webhook_secret", "topsecret")
+    dc = make_user(email="dc-webhook-rec@example.com", password="secret123", role=Role.DC)
+
+    payload = {
+        "call_id": "kw-call-rec-1", "direction": "incoming", "customer_number": "9876543211",
+        "duration": 30, "dc_user_id": dc.id, "recording_url": "https://knowlarity.example/rec/1.mp3",
+    }
+    body = json.dumps(payload).encode()
+    sig = hmac.new(b"topsecret", body, hashlib.sha256).hexdigest()
+    resp = client.post(
+        "/api/v1/webhooks/knowlarity/call-completed",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Knowlarity-Signature": sig},
+    )
+    assert resp.status_code == 204
+
+    login("dc-webhook-rec@example.com", "secret123")
+    call = client.get("/api/v1/calls/pending").json()["items"][0]
+    assert call["recording_status"] == "recording"
+    assert call["processing_status"] == "review_required"
+
+
 def test_confirm_and_log_requires_resolved_identity(db, make_user):
     dc = make_user(email="dc6@example.com", role=Role.DC)
     db.commit()

@@ -42,6 +42,18 @@ export interface OrgUnitNode extends OrgUnit {
   children: OrgUnitNode[];
 }
 
+export interface UnitSummary extends OrgUnit {
+  child_count: number;
+  official_count: number;
+}
+
+export interface UnitStats {
+  unit_id: number;
+  direct_officials: number;
+  total_officials: number;
+  total_units: number;
+}
+
 // --- officials ----------------------------------------------------------
 
 export type OfficialStatus = "active" | "archived";

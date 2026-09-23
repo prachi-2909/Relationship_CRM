@@ -62,3 +62,22 @@ class UnitOut(BaseModel):
 
 class UnitTreeNode(UnitOut):
     children: list["UnitTreeNode"] = []
+
+
+class UnitSummary(UnitOut):
+    """UnitOut plus counts for a drill-down list - how many active child
+    units and how many officials are directly attached to this exact unit
+    (not a recursive rollup over descendants)."""
+
+    child_count: int = 0
+    official_count: int = 0
+
+
+class UnitStats(BaseModel):
+    """Aggregate stats for the currently-viewed node's header in a
+    drill-down UI: totals across this unit and every descendant."""
+
+    unit_id: int
+    direct_officials: int
+    total_officials: int
+    total_units: int

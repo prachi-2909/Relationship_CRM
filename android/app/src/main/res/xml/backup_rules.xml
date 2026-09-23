@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude the encrypted token store and local queue DB from auto backup. -->
+    <exclude domain="sharedpref" path="rcrm_secure_prefs.xml" />
+    <exclude domain="database" path="rcrm_database" />
+</full-backup-content>

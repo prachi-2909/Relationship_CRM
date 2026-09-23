@@ -6,7 +6,7 @@ import { Button, Card, inputClass, PageHeader } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { ROLE_LABELS, type Role, type User, type UserStatus } from "../types";
 
-const ROLES: Role[] = ["admin", "relationship_manager", "approver_viewer"];
+const ROLES: Role[] = ["admin", "relationship_manager", "approver_viewer", "dc"];
 
 export function UsersPage() {
   const queryClient = useQueryClient();

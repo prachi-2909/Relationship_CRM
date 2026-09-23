@@ -1,80 +1,134 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { Badge } from "../components/Badge";
+import { Card, EmptyState, PageHeader, Spinner } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
-import type { OrgUnit, OrgUnitNode, UnitType } from "../types";
+import type {
+  OfficialListResponse,
+  OrgUnit,
+  OrgUnitNode,
+  UnitStats,
+  UnitSummary,
+  UnitType,
+} from "../types";
 
-function flatten(nodes: OrgUnitNode[], depth = 0): { node: OrgUnitNode; depth: number }[] {
-  return nodes.flatMap((node) => [
-    { node, depth },
-    ...flatten(node.children, depth + 1),
-  ]);
+interface Crumb {
+  id: number;
+  name: string;
+  type_code: string;
 }
 
 // Purely structural depth cues (never tied to a specific unit-type name) -
 // the hierarchy is configurable data, not something the UI should hard-code.
 const DEPTH_DOT = ["bg-primary", "bg-secondary", "bg-accent", "bg-saffron", "bg-muted-foreground"];
 
+function flatten(nodes: OrgUnitNode[], depth = 0): { node: OrgUnitNode; depth: number }[] {
+  return nodes.flatMap((node) => [{ node, depth }, ...flatten(node.children, depth + 1)]);
+}
+
 export function OrganisationPage() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
   const isAdmin = user?.role === "admin";
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [presetParentId, setPresetParentId] = useState<number | null>(null);
-  const [editing, setEditing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const [breadcrumb, setBreadcrumb] = useState<Crumb[]>([]);
+  const [autoDrilled, setAutoDrilled] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingUnit, setEditingUnit] = useState(false);
+
+  const currentId = breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].id : null;
+  const currentCrumb = breadcrumb[breadcrumb.length - 1] ?? null;
+  const showingRoots = breadcrumb.length === 0;
 
   const typesQuery = useQuery({
     queryKey: ["unit-types"],
     queryFn: () => api<UnitType[]>("/organization/unit-types"),
   });
+
+  const rootsQuery = useQuery({
+    queryKey: ["units", "roots"],
+    queryFn: () => api<UnitSummary[]>("/organization/units?roots_only=true&status=active"),
+    enabled: showingRoots,
+  });
+
+  // Land on the sole Corporate Centre's own overview + its RBOs, not a
+  // trivial single-tile screen the admin has to click through first.
+  useEffect(() => {
+    if (!autoDrilled && showingRoots && rootsQuery.data?.length === 1) {
+      const root = rootsQuery.data[0];
+      setBreadcrumb([{ id: root.id, name: root.name, type_code: root.type_code }]);
+      setAutoDrilled(true);
+    }
+  }, [autoDrilled, showingRoots, rootsQuery.data]);
+
+  const childrenQuery = useQuery({
+    queryKey: ["units", "children", currentId],
+    queryFn: () => api<UnitSummary[]>(`/organization/units?parent_id=${currentId}&status=active`),
+    enabled: currentId !== null,
+  });
+
+  const statsQuery = useQuery({
+    queryKey: ["units", "stats", currentId],
+    queryFn: () => api<UnitStats>(`/organization/units/${currentId}/stats`),
+    enabled: currentId !== null,
+  });
+
+  const isLeaf = currentId !== null && childrenQuery.data?.length === 0;
+
+  const officialsQuery = useQuery({
+    queryKey: ["officials", "by-unit", currentId],
+    queryFn: () => api<OfficialListResponse>(`/officials?unit_id=${currentId}&limit=200`),
+    enabled: isLeaf,
+  });
+
+  // Full flat unit list, only loaded when an admin actually opens a form
+  // that needs a global parent picker - the drill-down browsing above never
+  // pays for fetching all 400+ units at once.
   const treeQuery = useQuery({
     queryKey: ["units", "tree"],
     queryFn: () => api<OrgUnitNode[]>("/organization/units/tree"),
+    enabled: showAddForm || editingUnit,
   });
-
-  const rows = useMemo(
-    () => (treeQuery.data ? flatten(treeQuery.data) : []),
+  const flatUnits = useMemo(
+    () => (treeQuery.data ? flatten(treeQuery.data).map((r) => r.node) : []),
     [treeQuery.data],
   );
-  const selected = rows.find((r) => r.node.id === selectedId)?.node ?? null;
 
-  const invalidateUnits = () => queryClient.invalidateQueries({ queryKey: ["units"] });
+  const invalidateUnits = () => {
+    queryClient.invalidateQueries({ queryKey: ["units"] });
+  };
 
   const createUnit = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      api<OrgUnit>("/organization/units", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+      api<OrgUnit>("/organization/units", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => {
       invalidateUnits();
-      setShowForm(false);
+      setShowAddForm(false);
     },
   });
 
   const updateUnit = useMutation({
     mutationFn: (vars: { id: number; body: Record<string, unknown> }) =>
-      api<OrgUnit>(`/organization/units/${vars.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(vars.body),
-      }),
+      api<OrgUnit>(`/organization/units/${vars.id}`, { method: "PATCH", body: JSON.stringify(vars.body) }),
     onSuccess: () => {
       invalidateUnits();
-      setEditing(false);
+      setEditingUnit(false);
     },
   });
 
-  const selectUnit = (id: number) => {
-    setSelectedId(id);
-    setEditing(false);
+  const drillInto = (unit: UnitSummary) => {
+    setBreadcrumb((prev) => [...prev, { id: unit.id, name: unit.name, type_code: unit.type_code }]);
+    setShowAddForm(false);
+    setEditingUnit(false);
   };
 
-  const openAddForm = (parentId: number | null) => {
-    setPresetParentId(parentId);
-    setShowForm(true);
+  const jumpTo = (index: number) => {
+    setBreadcrumb((prev) => (index < 0 ? [] : prev.slice(0, index + 1)));
+    setShowAddForm(false);
+    setEditingUnit(false);
   };
 
   const toggleArchive = (unit: OrgUnit) =>
@@ -83,239 +137,248 @@ export function OrganisationPage() {
       body: { status: unit.status === "archived" ? "active" : "archived" },
     });
 
-  const typeLabel = (code: string) =>
-    typesQuery.data?.find((t) => t.code === code)?.label ?? code;
+  const typeLabel = (code: string) => typesQuery.data?.find((t) => t.code === code)?.label ?? code;
 
-  const orderedTypes = typesQuery.data ?? [];
+  const btnPrimary =
+    "rounded-lg bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] px-3 py-1.5 text-sm font-semibold text-secondary-foreground shadow-glow-gold transition-transform hover:-translate-y-0.5";
+  const btnGhost =
+    "rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted";
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-foreground">Organisation</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build the hierarchy in whatever order you need — add a unit under any
-            existing one, move it, or archive it, at any time.
-          </p>
-        </div>
-        {isAdmin && (
-          <button
-            onClick={() => (showForm ? setShowForm(false) : openAddForm(null))}
-            className={
-              showForm
-                ? "rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted"
-                : "rounded-lg bg-gradient-to-br from-saffron to-[hsl(36_78%_46%)] px-3 py-1.5 text-sm font-semibold text-secondary-foreground shadow-glow-gold transition-transform hover:-translate-y-0.5"
-            }
-          >
-            {showForm ? "Cancel" : "+ Add unit"}
-          </button>
-        )}
+      <PageHeader
+        title="Organisation"
+        description="Drill into the hierarchy — Corporate Centre, its RBOs, and each RBO's branches — instead of one long flat list."
+      />
+
+      <div className="mt-4 flex flex-wrap items-center gap-1 text-sm">
+        <button
+          onClick={() => jumpTo(-1)}
+          className={`rounded-md px-2 py-1 font-medium transition-colors ${
+            showingRoots ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          All units
+        </button>
+        {breadcrumb.map((crumb, i) => (
+          <span key={crumb.id} className="flex items-center gap-1">
+            <span className="text-muted-foreground/40">/</span>
+            <button
+              onClick={() => jumpTo(i)}
+              className={`rounded-md px-2 py-1 font-medium transition-colors ${
+                i === breadcrumb.length - 1
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {crumb.name}
+            </button>
+          </span>
+        ))}
       </div>
 
-      {orderedTypes.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-          <span className="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Levels
-          </span>
-          {orderedTypes.map((t, i) => (
-            <span key={t.code} className="flex items-center gap-1.5">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                  t.active
-                    ? "bg-muted text-foreground"
-                    : "bg-muted/50 text-muted-foreground/60 line-through"
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${DEPTH_DOT[i % DEPTH_DOT.length]}`} />
-                {t.label}
-              </span>
-              {i < orderedTypes.length - 1 && (
-                <span className="text-muted-foreground/40">→</span>
+      {currentCrumb && (
+        <Card className="mt-3 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg font-bold text-foreground">{currentCrumb.name}</h2>
+                <Badge tone="neutral">{typeLabel(currentCrumb.type_code)}</Badge>
+              </div>
+              {statsQuery.data && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {statsQuery.data.total_units} unit{statsQuery.data.total_units === 1 ? "" : "s"} below
+                  {" · "}
+                  {statsQuery.data.total_officials} official{statsQuery.data.total_officials === 1 ? "" : "s"} in
+                  total
+                  {statsQuery.data.direct_officials > 0 &&
+                    ` (${statsQuery.data.direct_officials} directly here)`}
+                </p>
               )}
-            </span>
-          ))}
+            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setEditingUnit(false);
+                    setShowAddForm((v) => !v);
+                  }}
+                  className={showAddForm ? btnGhost : btnPrimary}
+                >
+                  {showAddForm ? "Cancel" : "+ Add unit here"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setEditingUnit((v) => !v);
+                  }}
+                  className={btnGhost}
+                >
+                  {editingUnit ? "Cancel" : "Edit / move"}
+                </button>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {showingRoots && isAdmin && (
+        <div className="mt-3">
+          <button
+            onClick={() => {
+              setEditingUnit(false);
+              setShowAddForm((v) => !v);
+            }}
+            className={showAddForm ? btnGhost : btnPrimary}
+          >
+            {showAddForm ? "Cancel" : "+ Add a top-level unit"}
+          </button>
         </div>
       )}
 
-      {showForm && typesQuery.data && (
+      {showAddForm && typesQuery.data && (
         <UnitForm
           types={typesQuery.data}
-          units={rows.map((r) => r.node)}
-          initialParentId={presetParentId}
+          units={flatUnits}
+          initialParentId={currentId}
           pending={createUnit.isPending}
           error={createUnit.error}
+          loadingUnits={treeQuery.isPending}
           onSubmit={(body) => createUnit.mutate(body)}
         />
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-xl border border-border bg-card p-2 shadow-sm">
-          {treeQuery.isPending && (
-            <div className="p-4 text-sm text-muted-foreground">Loading…</div>
-          )}
-          {treeQuery.data && rows.length === 0 && (
-            <div className="p-6 text-sm text-muted-foreground">
-              No units yet.{isAdmin ? " Add the first one above." : ""}
-            </div>
-          )}
-          {treeQuery.data?.map((node) => (
-            <TreeNode
-              key={node.id}
-              node={node}
-              depth={0}
-              selectedId={selectedId}
-              typeLabel={typeLabel}
-              canEdit={isAdmin}
-              onSelect={selectUnit}
-              onAddChild={openAddForm}
-              onToggleArchive={toggleArchive}
-            />
-          ))}
-        </div>
+      {editingUnit && currentCrumb && typesQuery.data && childrenQuery.data && (
+        <UnitEditForm
+          key={currentCrumb.id}
+          unit={
+            // the header card only has {id,name,type_code} - the full record
+            // (location/department/status) is in the parent's children list,
+            // or in the flat tree once it loads for this same admin action
+            flatUnits.find((u) => u.id === currentCrumb.id) ??
+            childrenQuery.data.find((u) => u.id === currentCrumb.id) ?? {
+              id: currentCrumb.id,
+              name: currentCrumb.name,
+              type_code: currentCrumb.type_code,
+              parent_id: breadcrumb.length > 1 ? breadcrumb[breadcrumb.length - 2].id : null,
+              location: null,
+              department: null,
+              status: "active",
+              metadata: null,
+            }
+          }
+          types={typesQuery.data}
+          units={flatUnits.filter((u) => u.id !== currentCrumb.id)}
+          pending={updateUnit.isPending}
+          error={updateUnit.error}
+          loadingUnits={treeQuery.isPending}
+          onSubmit={(body) => updateUnit.mutate({ id: currentCrumb.id, body })}
+          onCancel={() => setEditingUnit(false)}
+        />
+      )}
 
-        <div className="rounded-xl border border-border bg-card shadow-sm p-4">
-          {!selected && (
-            <p className="text-sm text-muted-foreground">
-              Select a unit to see its details.
-            </p>
-          )}
-          {selected && !editing && (
-            <div>
-              <dl className="space-y-3 text-sm">
-                <Detail label="Name" value={selected.name} />
-                <Detail label="Type" value={typeLabel(selected.type_code)} />
-                <Detail label="Location" value={selected.location ?? "—"} />
-                <Detail label="Department" value={selected.department ?? "—"} />
-                <Detail label="Status" value={selected.status} />
-                <Detail
-                  label="Parent"
-                  value={
-                    rows.find((r) => r.node.id === selected.parent_id)?.node.name ??
-                    "— (top level)"
-                  }
-                />
-              </dl>
-              {isAdmin && (
-                <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
-                  <button
-                    onClick={() => openAddForm(selected.id)}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs text-secondary hover:bg-muted"
-                  >
-                    + Add child unit
-                  </button>
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => toggleArchive(selected)}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-                  >
-                    {selected.status === "archived" ? "Reactivate" : "Archive"}
-                  </button>
-                  {updateUnit.error instanceof ApiError && (
-                    <span className="self-center text-xs text-destructive">
-                      {updateUnit.error.message}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          {selected && editing && typesQuery.data && (
-            <UnitEditForm
-              key={selected.id}
-              unit={selected}
-              types={typesQuery.data}
-              units={rows.map((r) => r.node).filter((u) => u.id !== selected.id)}
-              pending={updateUnit.isPending}
-              error={updateUnit.error}
-              onSubmit={(body) => updateUnit.mutate({ id: selected.id, body })}
-              onCancel={() => setEditing(false)}
+      <div className="mt-4">
+        {(showingRoots ? rootsQuery.isPending : childrenQuery.isPending) && <Spinner />}
+
+        {showingRoots && rootsQuery.data && rootsQuery.data.length === 0 && (
+          <Card>
+            <EmptyState
+              title="No units yet"
+              hint={isAdmin ? "Add the first one above." : "Ask an admin to set up the hierarchy."}
             />
-          )}
-        </div>
+          </Card>
+        )}
+
+        {showingRoots && rootsQuery.data && rootsQuery.data.length > 0 && (
+          <UnitGrid units={rootsQuery.data} typeLabel={typeLabel} isAdmin={isAdmin} onSelect={drillInto} onToggleArchive={toggleArchive} />
+        )}
+
+        {!showingRoots && childrenQuery.data && childrenQuery.data.length > 0 && (
+          <UnitGrid units={childrenQuery.data} typeLabel={typeLabel} isAdmin={isAdmin} onSelect={drillInto} onToggleArchive={toggleArchive} />
+        )}
+
+        {isLeaf && (
+          <Card className="p-4">
+            <div className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Officials at {currentCrumb?.name}
+            </div>
+            {officialsQuery.isPending && <Spinner />}
+            {officialsQuery.data && officialsQuery.data.items.length === 0 && (
+              <EmptyState title="No officials here" hint="Nothing is directly attached to this unit yet." />
+            )}
+            {officialsQuery.data && officialsQuery.data.items.length > 0 && (
+              <ul className="divide-y divide-border">
+                {officialsQuery.data.items.map((o) => (
+                  <li key={o.id} className="py-2">
+                    <Link to={`/officials/${o.id}`} className="flex items-center justify-between gap-2 text-sm hover:underline">
+                      <span className="font-medium text-foreground">{o.name}</span>
+                      <span className="text-xs text-muted-foreground">{o.designation ?? "—"}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );
 }
 
-function TreeNode({
-  node,
-  depth,
-  selectedId,
+function UnitGrid({
+  units,
   typeLabel,
-  canEdit,
+  isAdmin,
   onSelect,
-  onAddChild,
   onToggleArchive,
 }: {
-  node: OrgUnitNode;
-  depth: number;
-  selectedId: number | null;
+  units: UnitSummary[];
   typeLabel: (code: string) => string;
-  canEdit: boolean;
-  onSelect: (id: number) => void;
-  onAddChild: (parentId: number) => void;
+  isAdmin: boolean;
+  onSelect: (unit: UnitSummary) => void;
   onToggleArchive: (unit: OrgUnit) => void;
 }) {
-  const isSelected = selectedId === node.id;
   return (
-    <div>
-      <div
-        className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-          isSelected ? "bg-primary/10" : "hover:bg-muted"
-        }`}
-      >
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {units.map((unit, i) => (
         <button
-          onClick={() => onSelect(node.id)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          key={unit.id}
+          onClick={() => onSelect(unit)}
+          className="group flex flex-col items-start gap-1.5 rounded-xl border border-border bg-card p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
         >
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${DEPTH_DOT[depth % DEPTH_DOT.length]}`}
-          />
-          <span className="truncate font-medium text-foreground">{node.name}</span>
-          <Badge tone="neutral">{typeLabel(node.type_code)}</Badge>
-          {node.status === "archived" && <Badge tone="warn">archived</Badge>}
+          <div className="flex w-full items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DEPTH_DOT[i % DEPTH_DOT.length]}`} />
+              <span className="truncate font-medium text-foreground">{unit.name}</span>
+            </span>
+            {isAdmin && (
+              <span
+                role="button"
+                title={unit.status === "archived" ? "Reactivate" : "Archive"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleArchive(unit);
+                }}
+                className="hidden shrink-0 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-destructive group-hover:opacity-100 sm:inline-block"
+              >
+                {unit.status === "archived" ? "↺" : "✕"}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge tone="neutral">{typeLabel(unit.type_code)}</Badge>
+            {unit.status === "archived" && <Badge tone="warn">archived</Badge>}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {unit.child_count > 0
+              ? `${unit.child_count} unit${unit.child_count === 1 ? "" : "s"} below`
+              : unit.official_count > 0
+                ? `${unit.official_count} official${unit.official_count === 1 ? "" : "s"}`
+                : "Empty"}
+            {unit.location ? ` · ${unit.location}` : ""}
+          </p>
         </button>
-        {canEdit && (
-          <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-            <button
-              title="Add child unit"
-              onClick={() => onAddChild(node.id)}
-              className="rounded-md px-1.5 py-0.5 text-xs font-semibold text-secondary hover:bg-card"
-            >
-              +
-            </button>
-            <button
-              title={node.status === "archived" ? "Reactivate" : "Archive"}
-              onClick={() => onToggleArchive(node)}
-              className="rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-card hover:text-destructive"
-            >
-              {node.status === "archived" ? "↺" : "✕"}
-            </button>
-          </span>
-        )}
-      </div>
-      {node.children.length > 0 && (
-        <div className="ml-2.5 border-l border-border pl-2.5">
-          {node.children.map((child) => (
-            <TreeNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              typeLabel={typeLabel}
-              canEdit={canEdit}
-              onSelect={onSelect}
-              onAddChild={onAddChild}
-              onToggleArchive={onToggleArchive}
-            />
-          ))}
-        </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -326,6 +389,7 @@ function UnitEditForm({
   units,
   pending,
   error,
+  loadingUnits,
   onSubmit,
   onCancel,
 }: {
@@ -334,6 +398,7 @@ function UnitEditForm({
   units: OrgUnit[];
   pending: boolean;
   error: unknown;
+  loadingUnits: boolean;
   onSubmit: (body: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
@@ -360,71 +425,62 @@ function UnitEditForm({
     "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
 
   return (
-    <form onSubmit={submit} className="space-y-3 text-sm">
-      <label className="block">
-        <span className="mb-1 block font-medium text-foreground">Name</span>
-        <input className={input} required value={name} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label className="block">
-        <span className="mb-1 block font-medium text-foreground">Type</span>
-        <select className={input} value={typeCode} onChange={(e) => setTypeCode(e.target.value)}>
-          {types.map((t) => (
-            <option key={t.code} value={t.code}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block">
-        <span className="mb-1 block font-medium text-foreground">Parent unit</span>
-        <select className={input} value={parentId} onChange={(e) => setParentId(e.target.value)}>
-          <option value="">— top level —</option>
-          {units.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block">
-        <span className="mb-1 block font-medium text-foreground">Location</span>
-        <input className={input} value={location} onChange={(e) => setLocation(e.target.value)} />
-      </label>
-      <label className="block">
-        <span className="mb-1 block font-medium text-foreground">Department</span>
-        <input
-          className={input}
-          value={department}
-          onChange={(e) => setDepartment(e.target.value)}
-        />
-      </label>
-      {error instanceof ApiError && <p className="text-sm text-destructive">{error.message}</p>}
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
-        >
-          {pending ? "Saving…" : "Save changes"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium text-foreground">{value}</dd>
-    </div>
+    <Card className="mt-3 p-4">
+      <form onSubmit={submit} className="space-y-3 text-sm">
+        <label className="block">
+          <span className="mb-1 block font-medium text-foreground">Name</span>
+          <input className={input} required value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-foreground">Type</span>
+          <select className={input} value={typeCode} onChange={(e) => setTypeCode(e.target.value)}>
+            {types.map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-foreground">
+            Parent unit {loadingUnits && "(loading full list…)"}
+          </span>
+          <select className={input} value={parentId} onChange={(e) => setParentId(e.target.value)}>
+            <option value="">— top level —</option>
+            {units.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-foreground">Location</span>
+          <input className={input} value={location} onChange={(e) => setLocation(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block font-medium text-foreground">Department</span>
+          <input className={input} value={department} onChange={(e) => setDepartment(e.target.value)} />
+        </label>
+        {error instanceof ApiError && <p className="text-sm text-destructive">{error.message}</p>}
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-60"
+          >
+            {pending ? "Saving…" : "Save changes"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Card>
   );
 }
 
@@ -434,6 +490,7 @@ function UnitForm({
   initialParentId,
   pending,
   error,
+  loadingUnits,
   onSubmit,
 }: {
   types: UnitType[];
@@ -441,6 +498,7 @@ function UnitForm({
   initialParentId: number | null;
   pending: boolean;
   error: unknown;
+  loadingUnits: boolean;
   onSubmit: (body: Record<string, unknown>) => void;
 }) {
   const [name, setName] = useState("");
@@ -467,29 +525,24 @@ function UnitForm({
   return (
     <form
       onSubmit={submit}
-      className="fade-in-up mt-4 grid gap-3 rounded-xl border border-border bg-card shadow-sm p-4 sm:grid-cols-2"
+      className="fade-in-up mt-3 grid gap-3 rounded-xl border border-border bg-card shadow-sm p-4 sm:grid-cols-2"
     >
-      {parentUnit && (
+      {initialParentId != null && (
         <p className="text-xs text-muted-foreground sm:col-span-2">
-          Adding a unit under <span className="font-medium text-foreground">{parentUnit.name}</span>.
+          Adding a unit under{" "}
+          <span className="font-medium text-foreground">
+            {parentUnit?.name ?? (loadingUnits ? "…" : `#${initialParentId}`)}
+          </span>
+          .
         </p>
       )}
       <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Name</span>
-        <input
-          className={input}
-          value={name}
-          required
-          onChange={(e) => setName(e.target.value)}
-        />
+        <input className={input} value={name} required onChange={(e) => setName(e.target.value)} />
       </label>
       <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Type</span>
-        <select
-          className={input}
-          value={typeCode}
-          onChange={(e) => setTypeCode(e.target.value)}
-        >
+        <select className={input} value={typeCode} onChange={(e) => setTypeCode(e.target.value)}>
           {types.map((t) => (
             <option key={t.code} value={t.code}>
               {t.label}
@@ -499,11 +552,7 @@ function UnitForm({
       </label>
       <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Parent unit</span>
-        <select
-          className={input}
-          value={parentId}
-          onChange={(e) => setParentId(e.target.value)}
-        >
+        <select className={input} value={parentId} onChange={(e) => setParentId(e.target.value)}>
           <option value="">— top level —</option>
           {units.map((u) => (
             <option key={u.id} value={u.id}>
@@ -514,16 +563,10 @@ function UnitForm({
       </label>
       <label className="text-sm">
         <span className="mb-1 block font-medium text-foreground">Location</span>
-        <input
-          className={input}
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        />
+        <input className={input} value={location} onChange={(e) => setLocation(e.target.value)} />
       </label>
       <div className="sm:col-span-2">
-        {error instanceof ApiError && (
-          <p className="mb-2 text-sm text-destructive">{error.message}</p>
-        )}
+        {error instanceof ApiError && <p className="mb-2 text-sm text-destructive">{error.message}</p>}
         <button
           type="submit"
           disabled={pending}
