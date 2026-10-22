@@ -25,6 +25,7 @@ from ...services import opportunities as opportunities_svc
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _load(db: Session, opportunity_id: int) -> Opportunity:
@@ -43,7 +44,7 @@ def list_opportunities(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     filters = []
     if relationship_id is not None:
@@ -106,7 +107,7 @@ def create_opportunity(
 
 @router.get("/{opportunity_id}", response_model=OpportunityDetail)
 def get_opportunity(
-    opportunity_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    opportunity_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)
 ):
     return OpportunityDetail.of(_load(db, opportunity_id))
 
@@ -177,7 +178,7 @@ def change_stage(
 
 @router.get("/{opportunity_id}/activities", response_model=list[OpportunityActivityOut])
 def list_activities(
-    opportunity_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    opportunity_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)
 ):
     opp = _load(db, opportunity_id)
     return [OpportunityActivityOut.model_validate(a) for a in opp.activities]

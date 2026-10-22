@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- Call audio (voice_notes/) never leaves the phone except to the CRM server (DPDP Act). -->
     <cloud-backup>
         <exclude domain="sharedpref" path="rcrm_secure_prefs.xml" />
         <exclude domain="database" path="rcrm_database" />
+        <exclude domain="file" path="voice_notes/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="rcrm_secure_prefs.xml" />
         <exclude domain="database" path="rcrm_database" />
+        <exclude domain="file" path="voice_notes/" />
     </device-transfer>
 </data-extraction-rules>

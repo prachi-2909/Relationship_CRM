@@ -12,26 +12,18 @@ def test_approver_cannot_create_official(client, make_user, login):
     assert resp.status_code == 403
 
 
-def test_relationship_manager_creates_and_lists_officials(client, make_user, login):
+def test_relationship_manager_has_no_officials_access(client, make_user, login):
+    """An RM works only with their CSPs (/csps/mine) - SBI officials are off-limits: the list is
+    always empty and any official's detail is 404, so a guessed id can't be read either."""
+    # Seed an official as admin so there IS one to (not) see.
+    _as(make_user, login, Role.ADMIN, "admin-off@example.com")
+    created_id = client.post("/api/v1/officials", json={"name": "A Rao", "level": "DGM"}).json()["id"]
+
     _as(make_user, login, Role.RELATIONSHIP_MANAGER, "rm@example.com")
-
-    for name, level in [("A Rao", "DGM"), ("B Singh", "AGM"), ("C Iyer", "DGM")]:
-        assert (
-            client.post(
-                "/api/v1/officials", json={"name": name, "level": level}
-            ).status_code
-            == 201
-        )
-
     all_resp = client.get("/api/v1/officials").json()
-    assert all_resp["total"] == 3
-
-    dgm = client.get("/api/v1/officials", params={"level": "DGM"}).json()
-    assert dgm["total"] == 2
-
-    hit = client.get("/api/v1/officials", params={"q": "singh"}).json()
-    assert hit["total"] == 1
-    assert hit["items"][0]["name"] == "B Singh"
+    assert all_resp["total"] == 0  # RM sees no SBI officials
+    assert client.get("/api/v1/officials", params={"q": "rao"}).json()["total"] == 0
+    assert client.get(f"/api/v1/officials/{created_id}").status_code == 404
 
 
 def test_set_field_then_admin_verify_rolls_up(client, make_user, login):

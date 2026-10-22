@@ -3,4 +3,6 @@
     <!-- Exclude the encrypted token store and local queue DB from auto backup. -->
     <exclude domain="sharedpref" path="rcrm_secure_prefs.xml" />
     <exclude domain="database" path="rcrm_database" />
+    <!-- Call audio never leaves the phone except to the CRM server (DPDP Act). -->
+    <exclude domain="file" path="voice_notes/" />
 </full-backup-content>

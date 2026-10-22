@@ -1,22 +1,39 @@
 package com.eko.rcrm.dc.data.remote
 
+import com.eko.rcrm.dc.data.remote.dto.AppVersionDto
+import com.eko.rcrm.dc.data.remote.dto.AttestChallengeDto
+import com.eko.rcrm.dc.data.remote.dto.CspDto
+import com.eko.rcrm.dc.data.remote.dto.AttestVerifyRequestDto
+import com.eko.rcrm.dc.data.remote.dto.AttestVerifyResponseDto
 import com.eko.rcrm.dc.data.remote.dto.CallSessionDetailDto
 import com.eko.rcrm.dc.data.remote.dto.CallSessionListResponseDto
 import com.eko.rcrm.dc.data.remote.dto.CallSessionSummaryDto
 import com.eko.rcrm.dc.data.remote.dto.ConfirmRequestDto
+import com.eko.rcrm.dc.data.remote.dto.DcProfileDto
+import com.eko.rcrm.dc.data.remote.dto.DcTerritoryDto
+import com.eko.rcrm.dc.data.remote.dto.CallerLookupRequestDto
+import com.eko.rcrm.dc.data.remote.dto.CallerLookupResponseDto
 import com.eko.rcrm.dc.data.remote.dto.IdentityCreateRequestDto
 import com.eko.rcrm.dc.data.remote.dto.IdentityLinkRequestDto
+import com.eko.rcrm.dc.data.remote.dto.IncomingNativeCallRequestDto
 import com.eko.rcrm.dc.data.remote.dto.LoginRequestDto
 import com.eko.rcrm.dc.data.remote.dto.LoginResponseDto
 import com.eko.rcrm.dc.data.remote.dto.ManualTextRequestDto
+import com.eko.rcrm.dc.data.remote.dto.NativeCallCompleteRequestDto
+import com.eko.rcrm.dc.data.remote.dto.OfficialCreateRequestDto
+import com.eko.rcrm.dc.data.remote.dto.OfficialDto
 import com.eko.rcrm.dc.data.remote.dto.OfficialListResponseDto
+import com.eko.rcrm.dc.data.remote.dto.OfficialUpdateRequestDto
 import com.eko.rcrm.dc.data.remote.dto.OutgoingCallRequestDto
 import com.eko.rcrm.dc.data.remote.dto.RemindLaterRequestDto
 import com.eko.rcrm.dc.data.remote.dto.UserDto
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
@@ -33,10 +50,17 @@ interface ApiService {
     @POST("auth/logout")
     suspend fun logout()
 
+    @POST("presence/heartbeat")
+    suspend fun presenceHeartbeat()
+
+    @POST("presence/background")
+    suspend fun presenceBackground()
+
     @GET("officials")
     suspend fun searchOfficials(
         @Query("q") query: String?,
-        @Query("limit") limit: Int = 6
+        @Query("limit") limit: Int = 100,
+        @Query("unit_id") unitId: Int? = null
     ): OfficialListResponseDto
 
     @POST("calls/outgoing")
@@ -61,8 +85,12 @@ interface ApiService {
     @POST("calls/{id}/voice-note")
     suspend fun uploadVoiceNote(
         @Path("id") id: Int,
-        @Part file: MultipartBody.Part
+        @Part file: MultipartBody.Part,
+        @Part("kind") kind: RequestBody
     ): CallSessionDetailDto
+
+    @DELETE("calls/{id}/voice-note")
+    suspend fun deleteVoiceNote(@Path("id") id: Int): CallSessionDetailDto
 
     @POST("calls/{id}/identity/link")
     suspend fun linkIdentity(
@@ -90,4 +118,54 @@ interface ApiService {
         @Path("id") id: Int,
         @Body request: RemindLaterRequestDto
     ): CallSessionSummaryDto
+
+    @POST("calls/{id}/native/complete")
+    suspend fun completeNativeCall(
+        @Path("id") id: Int,
+        @Body request: NativeCallCompleteRequestDto
+    ): CallSessionDetailDto
+
+    @POST("calls/native/incoming")
+    suspend fun logNativeCall(@Body request: IncomingNativeCallRequestDto): CallSessionDetailDto
+
+    @POST("calls/lookup")
+    suspend fun lookupCaller(@Body request: CallerLookupRequestDto): CallerLookupResponseDto
+
+    @POST("auth/attest/challenge")
+    suspend fun attestChallenge(): AttestChallengeDto
+
+    @POST("auth/attest/verify")
+    suspend fun attestVerify(@Body request: AttestVerifyRequestDto): AttestVerifyResponseDto
+
+    // ---- DC profile / territory ----
+
+    @GET("dc/profile")
+    suspend fun getDcProfile(): DcProfileDto
+
+    @GET("dc-territories")
+    suspend fun getDcTerritories(): List<DcTerritoryDto>
+
+    // ---- CSPs: the logged-in RM's own calling list ----
+
+    @GET("csps/mine")
+    suspend fun getMyCsps(): List<CspDto>
+
+    // ---- App self-update ----
+
+    @GET("app/version")
+    suspend fun getAppVersion(): AppVersionDto
+
+    // ---- Officials: read/create/edit (DC, scoped server-side to their territory) ----
+
+    @GET("officials/{id}")
+    suspend fun getOfficial(@Path("id") id: Int): OfficialDto
+
+    @POST("officials")
+    suspend fun createOfficial(@Body request: OfficialCreateRequestDto): OfficialDto
+
+    @PATCH("officials/{id}")
+    suspend fun updateOfficial(
+        @Path("id") id: Int,
+        @Body request: OfficialUpdateRequestDto
+    ): OfficialDto
 }

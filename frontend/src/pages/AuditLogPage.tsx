@@ -2,21 +2,24 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api, ApiError } from "../lib/api";
-import type { AuditListResponse } from "../types";
+import { ROLE_LABELS, type AuditListResponse, type Role } from "../types";
 
 const PAGE = 50;
+const ROLES: Role[] = ["admin", "relationship_manager", "approver_viewer", "dc"];
 
 export function AuditLogPage() {
   const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
+  const [actorRole, setActorRole] = useState("");
   const [offset, setOffset] = useState(0);
 
   const params = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
   if (action) params.set("action", action);
   if (entityType) params.set("entity_type", entityType);
+  if (actorRole) params.set("actor_role", actorRole);
 
   const query = useQuery({
-    queryKey: ["audit", action, entityType, offset],
+    queryKey: ["audit", action, entityType, actorRole, offset],
     queryFn: () => api<AuditListResponse>(`/audit-logs?${params}`),
   });
 
@@ -59,6 +62,21 @@ export function AuditLogPage() {
                 setOffset(0);
               }}
             />
+            <select
+              className={control}
+              value={actorRole}
+              onChange={(e) => {
+                setActorRole(e.target.value);
+                setOffset(0);
+              }}
+            >
+              <option value="">All roles</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
@@ -86,7 +104,20 @@ export function AuditLogPage() {
                       {new Date(e.at).toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {e.actor_id ? `#${e.actor_id}` : "system"}
+                      {e.actor_name ? (
+                        <>
+                          {e.actor_name}
+                          {e.actor_role && (
+                            <span className="ml-1 text-xs text-muted-foreground/70">
+                              ({ROLE_LABELS[e.actor_role as Role] ?? e.actor_role})
+                            </span>
+                          )}
+                        </>
+                      ) : e.actor_id ? (
+                        `#${e.actor_id}`
+                      ) : (
+                        "system"
+                      )}
                     </td>
                     <td className="px-3 py-2 font-medium text-foreground">{e.action}</td>
                     <td className="px-3 py-2 text-muted-foreground">

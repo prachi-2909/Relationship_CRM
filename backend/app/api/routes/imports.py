@@ -21,6 +21,7 @@ from ...services import ingestion
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 _MAX_ROWS = 5000
 
 
@@ -73,7 +74,7 @@ async def create_import_from_upload(
 
 @router.get("", response_model=list[ImportSummary])
 def list_imports(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db), _: User = Depends(_VIEWERS)
 ):
     rows = db.scalars(select(DataImport).order_by(DataImport.id.desc())).all()
     return [ImportSummary.model_validate(r) for r in rows]
@@ -83,7 +84,7 @@ def list_imports(
 def preview_import(
     import_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     di = _load(db, import_id)
     samples: list[WorkedSample] = []

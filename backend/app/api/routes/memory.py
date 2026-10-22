@@ -17,6 +17,7 @@ from ...services import strategic_insight
 router = APIRouter(tags=["memory"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _load_official(db: Session, official_id: int) -> Official:
@@ -37,7 +38,7 @@ def _load_fact(db: Session, official_id: int, fact_id: int) -> SemanticMemoryFac
 def list_facts(
     official_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     _load_official(db, official_id)
     return [FactOut.of(f) for f in semantic_memory_svc.facts_for_official(db, official_id, limit=100)]
@@ -101,7 +102,7 @@ def reject_fact(
 def list_insights(
     official_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     _load_official(db, official_id)
     return [InsightOut.of(i) for i in strategic_insight.latest_for_official(db, official_id, limit=20)]

@@ -1,7 +1,9 @@
 """User accounts and their roles."""
 
 import enum
+from datetime import datetime
 
+from sqlalchemy import Boolean, DateTime
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -39,6 +41,13 @@ class User(Base, TimestampMixin):
     status: Mapped[UserStatus] = mapped_column(
         _status, nullable=False, default=UserStatus.ACTIVE
     )
+
+    # Mobile app presence. Set by the Android app's foreground/background
+    # lifecycle callbacks (POST /presence/heartbeat and /presence/background),
+    # not by every API call - see services/presence.py for the "online" rule
+    # that also guards against a heartbeat silently going stale (app killed).
+    is_app_foreground: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<User {self.id} {self.email} {self.role.value}>"

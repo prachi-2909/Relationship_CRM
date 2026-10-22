@@ -18,6 +18,15 @@ secrets.*
 backend/data/
 backend/backups/
 backend/media/
+backend/releases/
+
+# ---- Real CSP / staff personal data (DPDP): never commit, never push ----
+# Local working copies of real Kiosk-Operator and official data (names, DOB,
+# email, home address, phone). Kept on the machine only; the app loads them at
+# runtime. Do NOT check these into the repo.
+backend/app/scripts/data/
+backend/dc_territory_map.json
+backend/_transcript_test.txt
 
 # ---- Python ---------------------------------------------------------------
 __pycache__/

@@ -3,8 +3,11 @@ package com.eko.rcrm.dc.data.local.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/** VOICE_NOTE and CALL_RECORDING double as the `kind` sent to POST calls/{id}/voice-note: the
+ * server accepts a CALL_RECORDING only for a CRM official's number. */
 object PendingUploadKind {
     const val VOICE_NOTE = "voice_note"
+    const val CALL_RECORDING = "call_recording"
     const val MANUAL_TEXT = "manual_text"
 }
 

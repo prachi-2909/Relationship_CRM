@@ -6,15 +6,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -25,13 +27,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.eko.rcrm.dc.ui.common.AppCard
 import com.eko.rcrm.dc.ui.common.CtaButton
 import com.eko.rcrm.dc.ui.common.ErrorBanner
 import com.eko.rcrm.dc.ui.theme.Background
 import com.eko.rcrm.dc.ui.theme.MutedForeground
+import com.eko.rcrm.dc.ui.theme.OnBackground
 import com.eko.rcrm.dc.ui.theme.Primary
 import com.eko.rcrm.dc.ui.theme.Secondary
-import com.eko.rcrm.dc.ui.theme.Surface
 
 @Composable
 fun LoginScreen(
@@ -59,10 +62,26 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(Secondary, RoundedCornerShape(18.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.AccountBalance,
+                    contentDescription = null,
+                    tint = androidx.compose.ui.graphics.Color.White,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 18.dp))
+
             Text(
                 text = "SBI Relationship CRM",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Secondary
+                style = MaterialTheme.typography.headlineSmall,
+                color = OnBackground
             )
             Text(
                 text = "Call Intelligence — Field App",
@@ -72,12 +91,7 @@ fun LoginScreen(
 
             androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 32.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(text = "Sign in", style = MaterialTheme.typography.titleLarge)
                     androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(top = 16.dp))

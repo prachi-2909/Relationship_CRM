@@ -21,6 +21,7 @@ from ...schemas.organization import (
 )
 from ...security.deps import get_current_user, require_roles
 from ...services import audit
+from ...services.organization import descendant_ids
 
 router = APIRouter(prefix="/organization", tags=["organization"])
 
@@ -113,36 +114,26 @@ def _validate_hierarchy(db: Session, type_code: str, parent_id: int | None) -> N
         )
 
 
-def _descendant_ids(db: Session, root_id: int) -> set[int]:
-    seen: set[int] = set()
-    frontier = [root_id]
-    while frontier:
-        rows = db.scalars(
-            select(OrganizationUnit.id).where(
-                OrganizationUnit.parent_id.in_(frontier)
-            )
-        ).all()
-        new = [r for r in rows if r not in seen]
-        seen.update(new)
-        frontier = new
-    return seen
-
-
 @router.get("/units", response_model=list[UnitSummary])
 def list_units(
     status_filter: OrgUnitStatus | None = Query(default=None, alias="status"),
     type_code: str | None = None,
     parent_id: int | None = None,
     roots_only: bool = False,
+    q: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     """A drill-down UI's bread and butter: list units at one level, each
     annotated with its own child/official counts so the UI can show "40
-    RBOs" or "12 branches, 3 officials" without an extra request per row."""
-    stmt = select(OrganizationUnit).order_by(OrganizationUnit.name)
+    RBOs" or "12 branches, 3 officials" without an extra request per row.
+    `q` is a plain name search, e.g. for a unit picker."""
+    stmt = select(OrganizationUnit).order_by(OrganizationUnit.name).limit(limit)
     if status_filter is not None:
         stmt = stmt.where(OrganizationUnit.status == status_filter)
+    if q:
+        stmt = stmt.where(OrganizationUnit.name.ilike(f"%{q}%"))
     if type_code is not None:
         stmt = stmt.where(OrganizationUnit.type_code == type_code)
     if roots_only:
@@ -190,7 +181,7 @@ def unit_stats(
     vs. the total across it and every descendant unit."""
     if db.get(OrganizationUnit, unit_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unit not found")
-    descendants = _descendant_ids(db, unit_id)
+    descendants = descendant_ids(db, unit_id)
     all_ids = descendants | {unit_id}
     direct = db.scalar(
         select(func.count())
@@ -299,7 +290,7 @@ def update_unit(
 
     if "parent_id" in data and data["parent_id"] is not None:
         new_parent = data["parent_id"]
-        if new_parent == unit.id or new_parent in _descendant_ids(db, unit.id):
+        if new_parent == unit.id or new_parent in descendant_ids(db, unit.id):
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot move a unit under itself"
             )

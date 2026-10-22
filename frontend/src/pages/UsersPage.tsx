@@ -4,7 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "../components/Badge";
 import { Button, Card, inputClass, PageHeader } from "../components/ui";
 import { api, ApiError } from "../lib/api";
-import { ROLE_LABELS, type Role, type User, type UserStatus } from "../types";
+import {
+  type PresenceStatus,
+  ROLE_LABELS,
+  type Role,
+  type TerritoryOut,
+  type UnitSummary,
+  type User,
+  type UserStatus,
+} from "../types";
 
 const ROLES: Role[] = ["admin", "relationship_manager", "approver_viewer", "dc"];
 
@@ -13,11 +21,20 @@ export function UsersPage() {
   const [addingOpen, setAddingOpen] = useState(false);
   const [resettingId, setResettingId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [territoryId, setTerritoryId] = useState<number | null>(null);
 
   const { data, isPending, error } = useQuery({
     queryKey: ["users"],
     queryFn: () => api<User[]>("/users"),
   });
+
+  // Refetched every 10s so "who's active" stays close to live without a manual reload.
+  const presenceQuery = useQuery({
+    queryKey: ["presence-status"],
+    queryFn: () => api<PresenceStatus[]>("/presence/status"),
+    refetchInterval: 10_000,
+  });
+  const presenceByUserId = new Map((presenceQuery.data ?? []).map((p) => [p.user_id, p]));
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["users"] });
 
@@ -89,6 +106,7 @@ export function UsersPage() {
                 <th className="px-4 py-2 font-medium">Email</th>
                 <th className="px-4 py-2 font-medium">Role</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Activity</th>
                 <th className="px-4 py-2 font-medium">Actions</th>
               </tr>
             </thead>
@@ -119,6 +137,9 @@ export function UsersPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-2">
+                      <ActivityBadge presence={presenceByUserId.get(user.id)} />
+                    </td>
+                    <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() =>
@@ -143,12 +164,29 @@ export function UsersPage() {
                         >
                           Reset password
                         </button>
+                        {user.role === "dc" && (
+                          <button
+                            onClick={() =>
+                              setTerritoryId(territoryId === user.id ? null : user.id)
+                            }
+                            className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                          >
+                            Territory
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
+                  {territoryId === user.id && (
+                    <tr className="border-t border-border bg-muted/40">
+                      <td colSpan={6} className="px-4 py-3">
+                        <TerritoryManager dcUserId={user.id} dcName={user.name} />
+                      </td>
+                    </tr>
+                  )}
                   {resettingId === user.id && (
                     <tr className="border-t border-border bg-muted/40">
-                      <td colSpan={5} className="px-4 py-3">
+                      <td colSpan={6} className="px-4 py-3">
                         <form
                           onSubmit={(e: FormEvent) => {
                             e.preventDefault();
@@ -198,6 +236,16 @@ export function UsersPage() {
       </Card>
     </div>
   );
+}
+
+function ActivityBadge({ presence }: { presence: PresenceStatus | undefined }) {
+  if (!presence || !presence.is_logged_in) {
+    return <Badge tone="neutral">Not logged in</Badge>;
+  }
+  if (presence.is_online) {
+    return <Badge tone="good">● Active now</Badge>;
+  }
+  return <Badge tone="warn">Logged in, not active</Badge>;
 }
 
 function NewUserForm({
@@ -273,5 +321,100 @@ function NewUserForm({
         )}
       </div>
     </form>
+  );
+}
+
+function TerritoryManager({ dcUserId, dcName }: { dcUserId: number; dcName: string }) {
+  const queryClient = useQueryClient();
+  const [query, setQuery] = useState("");
+
+  const territoryQuery = useQuery({
+    queryKey: ["dc-territories", dcUserId],
+    queryFn: () => api<TerritoryOut[]>(`/dc-territories?dc_user_id=${dcUserId}`),
+  });
+  const searchQuery = useQuery({
+    queryKey: ["units", "picker", query],
+    queryFn: () => api<UnitSummary[]>(`/organization/units?q=${encodeURIComponent(query)}&status=active`),
+    enabled: query.trim().length >= 2,
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["dc-territories", dcUserId] });
+
+  const assign = useMutation({
+    mutationFn: (organization_unit_id: number) =>
+      api<TerritoryOut>("/dc-territories", {
+        method: "POST",
+        body: JSON.stringify({ dc_user_id: dcUserId, organization_unit_id }),
+      }),
+    onSuccess: () => {
+      invalidate();
+      setQuery("");
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (territoryId: number) =>
+      api(`/dc-territories/${territoryId}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {dcName}'s territory — officials search on this DC's app is limited to these units and everything under them
+      </div>
+
+      {territoryQuery.data && territoryQuery.data.length === 0 && (
+        <p className="text-sm text-muted-foreground">No territory assigned yet — this DC sees no officials.</p>
+      )}
+      {territoryQuery.data && territoryQuery.data.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {territoryQuery.data.map((t) => (
+            <span
+              key={t.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs"
+            >
+              <Badge tone="neutral">{t.organization_unit_type}</Badge>
+              {t.organization_unit_name}
+              <button
+                onClick={() => remove.mutate(t.id)}
+                className="text-muted-foreground hover:text-destructive"
+                title="Remove"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative flex max-w-sm items-center gap-2">
+        <input
+          className={inputClass}
+          placeholder="Search a unit to add (e.g. an AO, RBO, or Branch)…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {searchQuery.data && searchQuery.data.length > 0 && (
+          <ul className="absolute top-full z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card shadow-md">
+            {searchQuery.data.map((u) => (
+              <li key={u.id}>
+                <button
+                  onClick={() => assign.mutate(u.id)}
+                  className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted"
+                >
+                  <span>{u.name}</span>
+                  <Badge tone="neutral">{u.type_code}</Badge>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {(assign.error instanceof ApiError || remove.error instanceof ApiError) && (
+        <p className="text-xs text-destructive">
+          {(assign.error as ApiError)?.message ?? (remove.error as ApiError)?.message}
+        </p>
+      )}
+    </div>
   );
 }

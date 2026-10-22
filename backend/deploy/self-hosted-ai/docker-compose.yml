@@ -1,0 +1,63 @@
+# Self-hosted, in-India AI stack for the SBI Relationship CRM (DPDP-compliant).
+#
+# Two OpenAI-compatible services the backend talks to - nothing leaves this host:
+#   - transcription (speech-to-text): faster-whisper large-v3 via Speaches
+#   - llm (briefs/summaries/"ask"): vLLM serving an open-weights Indic model
+#
+# Point the backend at them with these env vars (see .env.sample):
+#   TRANSCRIPTION_BASE_URL=http://<host>:8001/v1      TRANSCRIPTION_MODEL=Systran/faster-whisper-large-v3
+#   LLM_BASE_URL=http://<host>:8002/v1                LLM_MODEL=sarvamai/sarvam-m
+#   EMBEDDING_BASE_URL=http://<host>:8002/v1          EMBEDDING_MODEL=sarvamai/sarvam-m
+#
+# Run on a server physically located in India. Defaults target ONE ~24 GB GPU (A10/L4/3090/4090);
+# see README.md for CPU-only and multi-GPU / larger-model variants.
+
+services:
+  # --- Speech-to-text: OpenAI-compatible /v1/audio/transcriptions ------------------------------
+  transcription:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      # Preload so the first call isn't cold. large-v3 covers Indian languages; swap in an
+      # AI4Bharat IndicConformer deployment here once you've A/B'd it on your own call audio.
+      - WHISPER__MODEL=Systran/faster-whisper-large-v3
+      - WHISPER__INFERENCE_DEVICE=cuda
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # --- LLM: OpenAI-compatible /v1/chat/completions ---------------------------------------------
+  llm:
+    image: vllm/vllm-openai:latest
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    # Sarvam-M (24B, Apache-2.0, all 22 Indian languages incl. romanized). Quantize to fit 24 GB.
+    command: >
+      --model sarvamai/sarvam-m
+      --quantization awq
+      --max-model-len 8192
+      --gpu-memory-utilization 0.92
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:

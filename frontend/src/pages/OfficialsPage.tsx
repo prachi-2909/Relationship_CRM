@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { VerificationBadge } from "../components/Badge";
+import { KioskOperators } from "../components/KioskOperators";
+import { SectionCard } from "../components/sectionUi";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import type {
@@ -52,6 +54,8 @@ export function OfficialsPage() {
   const queryClient = useQueryClient();
   const canEdit = user?.role === "admin" || user?.role === "relationship_manager";
 
+  // Two sides of the directory: SBI officials (below) and SBI Kiosk Operators (the CSPs).
+  const [section, setSection] = useState<"officials" | "csp" | null>(null);
   const [q, setQ] = useState("");
   const [unitId, setUnitId] = useState("");
   const [verification, setVerification] = useState<VerificationStatus | "">("");
@@ -66,6 +70,7 @@ export function OfficialsPage() {
   const listQuery = useQuery({
     queryKey: ["officials", q, unitId, verification, offset],
     queryFn: () => api<OfficialListResponse>(`/officials?${params.toString()}`),
+    enabled: section === "officials",
   });
   const unitsQuery = useQuery({
     queryKey: ["units", "flat"],
@@ -109,11 +114,50 @@ export function OfficialsPage() {
     });
   }, [data]);
 
-  return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+  if (section === null) {
+    return (
+      <div>
         <div>
           <h1 className="font-heading text-xl font-bold text-foreground">Officials</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            SBI's own officials, and the SBI Kiosk Operators (CSPs) your Relationship Managers run.
+          </p>
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <SectionCard
+            title="SBI Officials"
+            badge="SBI"
+            subtitle="Bank officials across the hierarchy — grouped by their organisation unit."
+            accent="from-primary to-[hsl(211_90%_38%)]"
+            onClick={() => setSection("officials")}
+          />
+          <SectionCard
+            title="SBI Kiosk Operators"
+            badge="CSP"
+            subtitle="Customer Service Points — their contact numbers, birthday and branch."
+            accent="from-saffron to-[hsl(36_78%_46%)]"
+            onClick={() => setSection("csp")}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (section === "csp") {
+    return <KioskOperators onBack={() => setSection(null)} />;
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => setSection(null)}
+        className="mb-3 rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+      >
+        &larr; SBI Officials / Kiosk Operators
+      </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">SBI Officials</h1>
           <p className="mt-1 text-sm text-muted-foreground">Grouped by organisation unit.</p>
         </div>
         {canEdit && (

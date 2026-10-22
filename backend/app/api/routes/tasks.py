@@ -20,6 +20,7 @@ from ...services import tasks as tasks_svc
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 _SORTABLE = {
     "due_at": Task.due_at,
     "-due_at": Task.due_at.desc(),
@@ -47,7 +48,7 @@ def list_tasks(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(_VIEWERS),
 ):
     if sort not in _SORTABLE:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown sort key")
@@ -115,7 +116,7 @@ def create_task(
 def overdue_tasks(
     limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     now = datetime.now(timezone.utc)
     filters = [
@@ -132,7 +133,7 @@ def overdue_tasks(
 
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(
-    task_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    task_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)
 ):
     return TaskOut.of(_load(db, task_id))
 

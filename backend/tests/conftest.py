@@ -20,12 +20,28 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import get_settings  # noqa: E402
 from app.db import get_db
 from app.main import app
 from app.models import Base
 from app.models.official import Official
 from app.models.user import Role, User, UserStatus
 from app.scripts.seed_unit_types import ensure_defaults
+
+# Same offline-determinism goal as LLM_BASE_URL above, but these two fields are
+# `str | None`: an env var can only ever supply a string, never None (an empty
+# string stays "" through pydantic, it doesn't become None), so an env override
+# can't reproduce "unconfigured" here. get_settings() is an lru_cache'd
+# singleton - every module that did `settings = get_settings()` at import time
+# holds the same object, so mutating it here is visible everywhere.
+_settings = get_settings()
+_settings.transcription_base_url = None
+# Keep tests off the local whisper model (no download / no inference in CI).
+_settings.transcription_provider = "openai"
+_settings.knowlarity_base_url = None
+# .env may select android_native for real-device testing; tests assume the default provider
+# (tests that need native mode set it themselves via monkeypatch).
+_settings.telephony_provider = "knowlarity"
 from app.security.passwords import hash_password
 
 _tmp_dir = tempfile.mkdtemp(prefix="rcrm_test_")
@@ -46,6 +62,9 @@ TestSession = sessionmaker(
 
 @pytest.fixture(autouse=True)
 def _schema():
+    from app.security import login_throttle
+
+    login_throttle.reset()  # the throttle is process-global; don't let one test's failures bleed in
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     seeder = TestSession()

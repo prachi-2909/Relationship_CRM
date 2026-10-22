@@ -9,6 +9,7 @@ from ...models.user import Role, User, UserStatus
 from ...schemas.user import PasswordReset, UserCreate, UserOut, UserUpdate
 from ...security.deps import require_roles
 from ...security.passwords import hash_password
+from ...security.sessions import revoke_all_for_user
 from ...services import audit
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -77,6 +78,9 @@ def update_user(
         user.role = data["role"]
     if "status" in data:
         user.status = data["status"]
+        # Disabling an account must also cut its live sessions, not just block future logins.
+        if user.status is not UserStatus.ACTIVE:
+            revoke_all_for_user(db, user.id)
     after = {
         "name": user.name,
         "role": user.role.value,
@@ -112,6 +116,9 @@ def reset_password(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
     user.password_hash = hash_password(payload.new_password)
+    # A reset must invalidate every existing session - otherwise a session opened with the old
+    # (possibly compromised) password keeps working after the reset meant to lock it out.
+    revoke_all_for_user(db, user.id)
     audit.record(
         db,
         action="user.password_reset",

@@ -25,7 +25,9 @@ from .call_intelligence import (
 )
 from .connection import Connection, ConnectionStatus, ConnectionType
 from .conversation import AskConversation, AskMessage, MessageRole
+from .csp import Csp, CspStatus
 from .data_import import DataImport, ImportRow, ImportStatus, RowAction
+from .dc_territory import DCTerritory
 from .engagement_moment import EngagementMoment, MomentStatus, MomentType
 from .interaction import Direction, Interaction, InteractionType, Sentiment
 from .knowledge import KnowledgeChunk
@@ -119,6 +121,8 @@ __all__ = [
     "Connection",
     "ConnectionType",
     "ConnectionStatus",
+    "Csp",
+    "CspStatus",
     "AskConversation",
     "AskMessage",
     "MessageRole",
@@ -150,4 +154,5 @@ __all__ = [
     "CallAIAnalysis",
     "CallIdentityCandidate",
     "CallReview",
+    "DCTerritory",
 ]

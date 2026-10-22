@@ -55,3 +55,19 @@ def revoke_session(db: Session, token: str) -> None:
     if row is not None and row.revoked_at is None:
         row.revoked_at = datetime.now(timezone.utc)
         db.flush()
+
+
+def revoke_all_for_user(db: Session, user_id: int) -> int:
+    """Revokes every live session a user has - used on password reset and when an account is
+    disabled, so a changed/compromised credential can't be relied on by sessions that predate
+    the change. Returns how many were revoked."""
+    now = datetime.now(timezone.utc)
+    rows = db.scalars(
+        select(UserSession).where(
+            UserSession.user_id == user_id, UserSession.revoked_at.is_(None)
+        )
+    ).all()
+    for row in rows:
+        row.revoked_at = now
+    db.flush()
+    return len(rows)

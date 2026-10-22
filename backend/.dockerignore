@@ -6,9 +6,18 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# Databases, backups, uploaded call media and release APKs must NEVER be baked into the image
+# (they hold officials' PII, password hashes and call audio). ** matches at any depth, unlike *.db.
 *.db
+**/*.db
 *.db-journal
 *.db-wal
 *.db-shm
+backups/
+**/backups/
+media/
+**/media/
+releases/
+**/releases/
 tests/
 .git/

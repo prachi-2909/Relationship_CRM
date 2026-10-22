@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // libadb-android (embedded-ADB call recorder, ported from CallVault) is published on JitPack.
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

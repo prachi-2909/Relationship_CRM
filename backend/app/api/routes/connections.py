@@ -23,6 +23,7 @@ from ...services import connections as svc
 router = APIRouter(tags=["connections"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _official_or_404(db: Session, official_id: int) -> Official:
@@ -36,7 +37,7 @@ def _official_or_404(db: Session, official_id: int) -> Official:
 def official_connections(
     official_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     _official_or_404(db, official_id)
     rows = svc.neighbors(

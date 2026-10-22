@@ -8,19 +8,21 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ...db import get_db
-from ...models.user import User
+from ...models.user import Role, User
 from ...schemas.ask import AskRequest, AskResponse, ConversationDetail, ConversationSummary
-from ...security.deps import get_current_user
+from ...security.deps import require_roles
 from ...services import conversations, supervisor
 
 router = APIRouter(prefix="/ask", tags=["supervisor"])
+
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 @router.post("", response_model=AskResponse)
 def ask(
     payload: AskRequest,
     db: Session = Depends(get_db),
-    actor: User = Depends(get_current_user),
+    actor: User = Depends(_VIEWERS),
 ):
     conv = conversations.get_or_create(db, actor, payload.conversation_id)
     # a fresh conversation is already flushed (has an id) with no messages
@@ -51,7 +53,7 @@ def ask(
 def list_conversations(
     limit: int = Query(default=20, ge=1, le=50),
     db: Session = Depends(get_db),
-    actor: User = Depends(get_current_user),
+    actor: User = Depends(_VIEWERS),
 ):
     return conversations.list_for_user(db, actor, limit=limit)
 
@@ -60,7 +62,7 @@ def list_conversations(
 def get_conversation(
     conversation_id: int,
     db: Session = Depends(get_db),
-    actor: User = Depends(get_current_user),
+    actor: User = Depends(_VIEWERS),
 ):
     conv = conversations.get_detail(db, actor, conversation_id)
     return ConversationDetail(

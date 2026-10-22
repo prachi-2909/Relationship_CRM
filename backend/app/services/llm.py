@@ -332,7 +332,7 @@ def chat(
     to a template) or when the call fails. Reusable by any read-only agent
     that needs prose.
     """
-    if not settings.llm_base_url:
+    if not settings.ai_data_processing_enabled or not settings.llm_base_url:
         return None
     try:
         import httpx
@@ -367,7 +367,7 @@ def extract_interaction(text: str, *, interaction_type: str = "note") -> Extract
     text = (text or "").strip()
     if not text:
         return ExtractionResult(model=settings.llm_model if settings.llm_base_url else "stub")
-    if settings.llm_base_url:
+    if settings.ai_data_processing_enabled and settings.llm_base_url:
         try:
             return _llm_extract(text, interaction_type)
         except Exception:

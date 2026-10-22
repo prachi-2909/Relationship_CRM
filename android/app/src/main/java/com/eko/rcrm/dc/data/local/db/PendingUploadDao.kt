@@ -27,4 +27,8 @@ interface PendingUploadDao {
 
     @Query("SELECT * FROM pending_uploads WHERE status != 'uploading' ORDER BY createdAt ASC")
     suspend fun getAllPending(): List<PendingUploadEntity>
+
+    /** Queued audio for a call - once the call is logged it must never be uploaded. */
+    @Query("DELETE FROM pending_uploads WHERE callSessionId = :callSessionId AND localFilePath IS NOT NULL")
+    suspend fun deleteAudioForCall(callSessionId: Int)
 }

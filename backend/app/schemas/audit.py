@@ -10,6 +10,8 @@ class AuditEntry(BaseModel):
 
     id: int
     actor_id: int | None
+    actor_name: str | None = None
+    actor_role: str | None = None
     action: str
     entity_type: str
     entity_id: str | None

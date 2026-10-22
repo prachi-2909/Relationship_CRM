@@ -45,6 +45,7 @@ settings = get_settings()
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _load_run(db: Session, run_id: int) -> AgentRun:
@@ -98,7 +99,7 @@ def list_runs(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     filters = []
     if scope is not None:
@@ -118,7 +119,7 @@ def list_runs(
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunDetail)
-def get_run(run_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_run(run_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)):
     return AgentRunDetail.of(_load_run(db, run_id))
 
 
@@ -131,7 +132,7 @@ def list_recommendations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     filters = []
     if status_filter is not None:
@@ -157,7 +158,7 @@ def list_recommendations(
 
 
 @router.get("/recommendations/{rec_id}", response_model=RecommendationDetail)
-def get_recommendation(rec_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_recommendation(rec_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)):
     return RecommendationDetail.of(_load_recommendation(db, rec_id))
 
 
@@ -197,7 +198,7 @@ def list_outcomes(
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     query = select(RecommendationOutcome)
     if status_filter is not None:
@@ -207,7 +208,7 @@ def list_outcomes(
 
 
 @router.get("/recommendations/{rec_id}/outcome", response_model=OutcomeOut | None)
-def get_outcome(rec_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_outcome(rec_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)):
     _load_recommendation(db, rec_id)
     outcome = db.scalar(
         select(RecommendationOutcome).where(RecommendationOutcome.recommendation_id == rec_id)
@@ -221,7 +222,7 @@ def get_evaluation(
     risk_tier: RiskTier | None = None,
     since: datetime | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     metrics = outcomes_svc.compute_metrics(db, rec_type=type_filter, risk_tier=risk_tier, since=since)
     return EvaluationSummary(**metrics)

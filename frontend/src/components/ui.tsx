@@ -28,15 +28,18 @@ export function Card({
   className = "",
   as: Tag = "div",
   interactive = false,
+  id,
 }: {
   children: ReactNode;
   className?: string;
   as?: "div" | "section";
   /** Adds the hover-lift treatment used for clickable cards throughout the app. */
   interactive?: boolean;
+  id?: string;
 }) {
   return (
     <Tag
+      id={id}
       className={`rounded-xl border border-border bg-card shadow-sm ${
         interactive ? "transition-all hover:-translate-y-0.5 hover:shadow-md" : ""
       } ${className}`}

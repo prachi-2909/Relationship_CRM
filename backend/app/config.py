@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     llm_model: str = "stub"
     llm_timeout_seconds: float = 30.0
 
+    # DPDP master switch. When False, NO audio or text is sent to ANY AI endpoint - transcription,
+    # LLM and embeddings all fall back to their offline stubs, regardless of the *_base_url values.
+    # Lets a deployment guarantee nothing leaves the server even if endpoints are still configured.
+    # For DPDP compliance those endpoints should themselves be self-hosted inside India; see
+    # deploy/self-hosted-ai/README.md.
+    ai_data_processing_enabled: bool = True
+
+    # Android hardware Key Attestation (sideloaded / non-Google-Play fleets). When True, the backend
+    # BLOCKS requests from devices that fail attestation; keep False (report-only, audit a verdict
+    # but never block) until the verifier is validated on real devices and Google roots are pinned in
+    # app/security/google_attestation_roots.pem. See app/security/key_attestation.py.
+    require_device_attestation: bool = False
+
     # Background jobs: nightly score recompute + overdue-task sweep.
     enable_scheduler: bool = True
     overdue_escalation_days: int = 3
@@ -89,19 +102,81 @@ class Settings(BaseSettings):
     # Mobile Call Intelligence. enable_call_intelligence is the kill switch.
     # Knowlarity/transcription are unset by default -> every call to them is a
     # graceful no-op/stub, same offline-first pattern as llm_base_url.
+    #
+    # telephony_provider selects who places an outgoing call: "knowlarity" (default -
+    # the backend triggers Knowlarity's Click-to-Call API, unchanged) or
+    # "android_native" (the backend does nothing here - the DC's own app dials via the
+    # device's SIM and reports the outcome back via /calls/{id}/native/complete).
     enable_call_intelligence: bool = True
+    telephony_provider: str = "knowlarity"
     knowlarity_base_url: str | None = None
     knowlarity_api_key: str | None = None
     knowlarity_number: str | None = None
     knowlarity_webhook_secret: str | None = None
+    # "local_whisper" = open-source faster-whisper running IN this process (no Groq, nothing leaves the
+    # server). "openai" = an OpenAI-compatible HTTP endpoint (Groq/self-hosted). Transcription always
+    # runs in the BACKGROUND so an upload never waits for it.
+    transcription_provider: str = "local_whisper"
+    local_whisper_model: str = "medium"  # base < small < medium < large-v3 (accuracy up, speed down).
+    # "medium" reliably catches figures/targets/deadlines in Hindi-English calls where "small" drops
+    # them; on CPU it runs ~1.2x real-time (fine in the background). Drop to "small" for low-RAM boxes.
+    local_whisper_compute: str = "int8"  # int8 = fast on CPU; float16 on GPU
+    # Gently denoise call audio (speech-safe, via PyAV) before transcription to lift quality on
+    # noisy/quiet recordings. Never removes speech; falls back to the raw audio if it fails.
+    transcription_denoise_enabled: bool = True
     transcription_base_url: str | None = None
     transcription_api_key: str | None = None
+    transcription_model: str = "whisper-large-v3-turbo"
+    # Hinglish: DC calls are Hindi/English code-mixed. Setting the language to Hindi captures that
+    # far better than auto-detect, and seeding a romanized (Hinglish) prompt biases Whisper to write
+    # Hindi in the Latin script the staff read, rather than Devanagari. Both are tunable per deployment.
+    transcription_language: str | None = "hi"
+    # A SHORT seed only. Whisper's prompt is a context hint, not an instruction - a long/forcing
+    # prompt makes it hallucinate or repeat the prompt. A brief Hinglish seed nudges Roman-script
+    # output while keeping accuracy. Blank it (TRANSCRIPTION_PROMPT=) if transcripts look wrong.
+    transcription_prompt: str | None = "Haan ji, namaste. Banking call."
+    # Call audio exists only to be transcribed, never to be stored (DPDP Act data
+    # minimisation): it is always deleted the moment the call is logged into the CRM -
+    # that is not configurable. A call that is never logged keeps its audio at most this
+    # many days, after which the nightly job deletes it anyway.
+    unconfirmed_call_audio_retention_days: int = 7
     call_pending_reminder_hours: int = 4
+    # Daily CSP sync from the live "Calling Sheet" Google Sheet (public CSV export). Keeps each
+    # CSP's name, number, alternate number and assigned RM current, and deactivates CSPs that are
+    # no longer active there. Runs every evening (see csp_sync_hour) when csp_sync_enabled.
+    csp_sync_enabled: bool = True
+    csp_sync_hour: int = 20  # 8 PM India time (the job's trigger uses Asia/Kolkata explicitly)
+    csp_sync_timezone: str = "Asia/Kolkata"
+    csp_sheet_id: str = "1KHy7ejiUWZg9EQA0x4lm0axnVS5Hpiw1vLruc-0jSOg"
+    csp_sheet_gid: str = "1807123739"
+    # Email is sent through Eko's Gmail Template Sender (MCP over HTTP) - branded HTML template +
+    # Gmail delivery from an already-authorised account, so no SMTP credentials are needed here,
+    # only the shared API key. Set gmail_mcp_api_key via env / .env; nothing is sent without it.
+    gmail_mcp_url: str = "https://indev.eko.in/gmail/mcp"
+    gmail_mcp_api_key: str | None = None
+    smtp_from_name: str = "SBI Relationship Team"
+    # TESTING SAFETY: while True, NO real email is ever sent - birthday wishes are only drafted
+    # (recipient + subject + body returned/logged for review). Flip to False to actually send.
+    email_draft_only: bool = True
+    # Daily CSP birthday wishes: emails active CSPs whose birthday is today. Runs every morning
+    # when enabled (and SMTP is configured).
+    csp_birthday_wishes_enabled: bool = False  # OFF for now - no mail activity until re-enabled
+    csp_birthday_hour: int = 9  # 9 AM India time
+    csp_birthday_subject: str = "Happy Birthday from your SBI team!"
     # Local disk storage for uploaded DC voice notes, relative to the
     # database file's own directory (same convention as backup_dir). Swap
     # for real object storage later purely via config - the rest of the
     # pipeline only ever deals in a secure_object_ref string.
     media_dir: str = "media"
+
+    # Android app self-update: the DC app checks GET /app/version on launch
+    # and, if newer, downloads GET /app/download and prompts a single tap to
+    # install (Android has no silent-install path for a sideloaded app
+    # without enterprise/MDM management - this is the closest to "automatic"
+    # that's actually possible). Bumped by app/scripts/publish_android_release.py.
+    android_release_dir: str = "releases"
+    android_latest_version_code: int = 1
+    android_latest_version_name: str = "1.0"
 
     @property
     def is_sqlite(self) -> bool:

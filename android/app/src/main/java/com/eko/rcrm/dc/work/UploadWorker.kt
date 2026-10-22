@@ -35,13 +35,20 @@ class UploadWorker @AssistedInject constructor(
 
         callRepository.markUploadStatus(entity, PendingUploadStatus.UPLOADING)
 
-        return when (callRepository.processPendingUpload(entity)) {
+        val result = callRepository.processPendingUpload(entity)
+        return when (result) {
             is AppResult.Success -> {
                 callRepository.deletePendingUpload(entity)
                 Result.success()
             }
             is AppResult.Error -> {
-                if (runAttemptCount >= MAX_ATTEMPTS) {
+                val isAudio = entity.localFilePath != null
+                if (isAudio && (callRepository.isPermanentRejection(result) || runAttemptCount >= MAX_ATTEMPTS)) {
+                    // Audio is never kept on the phone indefinitely: refused for good (e.g. not a
+                    // CRM number) or still failing after every retry, it is deleted, not parked.
+                    callRepository.abandonPendingUpload(entity)
+                    Result.failure()
+                } else if (runAttemptCount >= MAX_ATTEMPTS) {
                     callRepository.markUploadStatus(entity, PendingUploadStatus.FAILED)
                     Result.failure()
                 } else {

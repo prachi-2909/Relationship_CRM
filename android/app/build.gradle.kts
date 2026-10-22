@@ -20,15 +20,26 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Phone-on-same-Wi-Fi testing: this PC's LAN IP, backend bound to 0.0.0.0.
-        // Was http://10.0.2.2:8010/api/v1/ for the (unavailable) Android emulator.
+        // Default (used by debug): this PC's LAN IP over plain HTTP for phone-on-same-Wi-Fi
+        // testing. Cleartext to this host is allowed ONLY in debug builds, via
+        // src/debug/res/xml/network_security_config.xml. Release overrides this below with HTTPS.
         buildConfigField("String", "API_BASE_URL", "\"http://192.168.30.25:8010/api/v1/\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Bank-grade: shrink + obfuscate so the shipped APK doesn't decompile to readable code
+            // that exposes the token flow or the CRM-contact recording gate. Keep rules for
+            // serialization/Retrofit/Room live in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Release must talk to the CRM over HTTPS only (cleartext is forbidden by the release
+            // network-security config). Supply the real host at build time, e.g.
+            //   ./gradlew assembleRelease -PrcrmApiBaseUrl=https://crm.example.bank/api/v1/
+            val releaseApiBaseUrl = (project.findProperty("rcrmApiBaseUrl") as String?)
+                ?: "https://REPLACE_WITH_PRODUCTION_HOST/api/v1/"
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
         }
         debug {
             isMinifyEnabled = false
@@ -47,6 +58,9 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // Generated stubs for IRecorderService, the binder the app and the shell-uid recorder
+        // process talk over (ported from CallVault / ShizuCallRecorder).
+        aidl = true
     }
 
     packaging {
@@ -65,6 +79,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.6")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -94,8 +109,19 @@ dependencies {
     kapt("androidx.hilt:hilt-compiler:1.2.0")
 
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Shizuku: one privilege source for the ported CallVault call-audio recorder. Apache-2.0.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // Embedded-ADB privilege source (built-in mode, no second app): pairs with the phone's own
+    // Wireless Debugging and runs a shell-uid recorder. libadb-android does the ADB protocol/pairing/TLS.
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
+    compileOnly("org.bouncycastle:bcprov-jdk15to18:1.81")
 
     testImplementation("junit:junit:4.13.2")
 }

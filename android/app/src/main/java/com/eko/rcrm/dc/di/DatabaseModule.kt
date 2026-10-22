@@ -3,6 +3,7 @@ package com.eko.rcrm.dc.di
 import android.content.Context
 import androidx.room.Room
 import com.eko.rcrm.dc.data.local.db.AppDatabase
+import com.eko.rcrm.dc.data.local.db.ArmedNativeCallDao
 import com.eko.rcrm.dc.data.local.db.PendingUploadDao
 import dagger.Module
 import dagger.Provides
@@ -25,4 +26,8 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun providePendingUploadDao(database: AppDatabase): PendingUploadDao = database.pendingUploadDao()
+
+    @Provides
+    @Singleton
+    fun provideArmedNativeCallDao(database: AppDatabase): ArmedNativeCallDao = database.armedNativeCallDao()
 }

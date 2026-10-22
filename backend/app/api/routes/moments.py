@@ -31,6 +31,7 @@ settings = get_settings()
 router = APIRouter(prefix="/moments", tags=["moments"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _load(db: Session, moment_id: int) -> EngagementMoment:
@@ -58,7 +59,7 @@ def list_moments(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     filters = []
     if status_filter is not None:
@@ -89,7 +90,7 @@ def list_moments(
 
 @router.get("/{moment_id}", response_model=MomentDetail)
 def get_moment(
-    moment_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    moment_id: int, db: Session = Depends(get_db), _: User = Depends(_VIEWERS)
 ):
     return MomentDetail.of(_load(db, moment_id))
 

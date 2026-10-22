@@ -8,6 +8,7 @@ import { Card, EmptyState, PageHeader, Spinner } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import {
   CALL_IDENTITY_STATUS_TONE,
+  CALL_IDENTITY_STATUS_LABEL,
   CALL_PROCESSING_STATUS_TONE,
   type CallSessionDetail,
   type CallSessionListResponse,
@@ -15,12 +16,24 @@ import {
   type OfficialListResponse,
 } from "../types";
 
+/** "2m 14s" / "43s" / null while the call hasn't ended yet. device_estimated (native-SIM
+ * calls routed through the DC's own phone) is OFFHOOK->IDLE elapsed time on a non-privileged
+ * observer, which conflates ring-time and talk-time - flagged rather than shown as precise. */
+function formatCallDuration(seconds: number | null, source: string | null): string | null {
+  if (seconds === null) return null;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const base = minutes > 0 ? `${minutes}m ${secs}s` : `${secs}s`;
+  return source === "device_estimated" ? `${base} (approx.)` : base;
+}
+
 export function CallIntelligencePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"pending" | "history">("pending");
   const [selected, setSelected] = useState<number | null>(null);
   const [dcFilter, setDcFilter] = useState<string>("");
+  const [cspOnly, setCspOnly] = useState(false);
 
   const dcOptionsQuery = useQuery({
     queryKey: ["calls", "dc-options"],
@@ -28,10 +41,12 @@ export function CallIntelligencePage() {
     enabled: user?.role !== "dc",
   });
   const listQuery = useQuery({
-    queryKey: ["calls", view, dcFilter],
+    queryKey: ["calls", view, dcFilter, cspOnly],
     queryFn: () =>
       api<CallSessionListResponse>(
-        `/calls/${view}?limit=100${dcFilter ? `&dc_user_id=${dcFilter}` : ""}`,
+        `/calls/${view}?limit=100${dcFilter ? `&dc_user_id=${dcFilter}` : ""}${
+          cspOnly ? "&csp_only=true" : ""
+        }`,
       ),
   });
   const detailQuery = useQuery({
@@ -72,13 +87,47 @@ export function CallIntelligencePage() {
             value={dcFilter}
             onChange={(e) => setDcFilter(e.target.value)}
           >
-            <option value="">All DCs</option>
-            {dcOptionsQuery.data.map((dc) => (
-              <option key={dc.id} value={dc.id}>
-                {dc.name}
-              </option>
-            ))}
+            <option value="">All staff</option>
+            {dcOptionsQuery.data.some((o) => o.role === "relationship_manager") ? (
+              <>
+                <optgroup label="Relationship Managers">
+                  {dcOptionsQuery.data
+                    .filter((o) => o.role === "relationship_manager")
+                    .map((rm) => (
+                      <option key={rm.id} value={rm.id}>
+                        {rm.name}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="District Coordinators">
+                  {dcOptionsQuery.data
+                    .filter((o) => o.role !== "relationship_manager")
+                    .map((dc) => (
+                      <option key={dc.id} value={dc.id}>
+                        {dc.name}
+                      </option>
+                    ))}
+                </optgroup>
+              </>
+            ) : (
+              dcOptionsQuery.data.map((dc) => (
+                <option key={dc.id} value={dc.id}>
+                  {dc.name}
+                </option>
+              ))
+            )}
           </select>
+        )}
+        {user?.role !== "dc" && (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
+            <input
+              type="checkbox"
+              checked={cspOnly}
+              onChange={(e) => setCspOnly(e.target.checked)}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            CSP calls only
+          </label>
         )}
       </div>
 
@@ -104,7 +153,7 @@ export function CallIntelligencePage() {
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2">
                   <span className="font-medium text-foreground">
-                    {c.official_name ?? "Unregistered caller"}
+                    {c.official_name ?? c.csp_name ?? "Unregistered caller"}
                   </span>
                   <Badge tone={CALL_PROCESSING_STATUS_TONE[c.processing_status]}>
                     {c.processing_status.replace(/_/g, " ")}
@@ -115,11 +164,14 @@ export function CallIntelligencePage() {
                   <span>{c.phone_ref}</span>
                   {user?.role !== "dc" && <span>by {c.dc_user_name}</span>}
                   <Badge tone={CALL_IDENTITY_STATUS_TONE[c.identity_status]}>
-                    {c.identity_status.replace(/_/g, " ")}
+                    {CALL_IDENTITY_STATUS_LABEL[c.identity_status]}
                   </Badge>
                 </span>
                 <span className="mt-1 block text-xs text-muted-foreground/80">
                   {new Date(c.started_at).toLocaleString()}
+                  {formatCallDuration(c.duration_seconds, c.duration_source) && (
+                    <> · {formatCallDuration(c.duration_seconds, c.duration_source)}</>
+                  )}
                 </span>
               </span>
             </button>
@@ -143,7 +195,7 @@ export function CallIntelligencePage() {
 
 function NewCallControl({ onStarted }: { onStarted: () => void }) {
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<{ id: number; name: string } | null>(null);
+  const [picked, setPicked] = useState<{ id: number; name: string; unit: string | null } | null>(null);
 
   const searchQuery = useQuery({
     queryKey: ["officials", "call-picker", query],
@@ -166,7 +218,10 @@ function NewCallControl({ onStarted }: { onStarted: () => void }) {
       <div className="relative">
         {picked ? (
           <span className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm">
-            {picked.name}
+            <span>
+              {picked.name}
+              {picked.unit && <span className="ml-1.5 text-xs text-muted-foreground">({picked.unit})</span>}
+            </span>
             <button onClick={() => setPicked(null)} className="text-xs text-muted-foreground hover:underline">
               change
             </button>
@@ -180,17 +235,27 @@ function NewCallControl({ onStarted }: { onStarted: () => void }) {
           />
         )}
         {!picked && searchQuery.data && searchQuery.data.items.length > 0 && (
-          <ul className="absolute z-10 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-card shadow-md">
+          <ul className="absolute z-10 mt-1 w-72 overflow-hidden rounded-lg border border-border bg-card shadow-md">
             {searchQuery.data.items.map((o) => (
               <li key={o.id}>
                 <button
                   onClick={() => {
-                    setPicked({ id: o.id, name: o.name });
+                    setPicked({ id: o.id, name: o.name, unit: o.organization_unit_name });
                     setQuery("");
                   }}
                   className="block w-full px-2.5 py-1.5 text-left text-sm hover:bg-muted"
                 >
-                  {o.name}
+                  <span className="block font-medium text-foreground">{o.name}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    {o.designation && <span>{o.designation}</span>}
+                    {o.organization_unit_name && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5">
+                        {o.organization_unit_name}
+                        {o.organization_unit_type ? ` · ${o.organization_unit_type}` : ""}
+                      </span>
+                    )}
+                    {!o.designation && !o.organization_unit_name && o.phone && <span>{o.phone}</span>}
+                  </span>
                 </button>
               </li>
             ))}
@@ -213,6 +278,7 @@ function NewCallControl({ onStarted }: { onStarted: () => void }) {
 
 const BRIEF_FIELD_LABELS: Record<string, string> = {
   summary: "Summary",
+  highlights: "Target / deadline / key figures",
   key_points: "Key points",
   decisions: "Decisions",
   commitments: "Commitments",
@@ -267,7 +333,9 @@ function CallReviewPanel({ call, onChanged }: { call: CallSessionDetail; onChang
     onSuccess: onChanged,
   });
 
-  const needsIdentity = call.relationship_id === null;
+  // A CSP (Kiosk Operator) call is already identified by its operator - it has no
+  // official Relationship row and must not be forced through official resolution.
+  const needsIdentity = call.relationship_id === null && call.csp_id === null;
   const needsSource = !call.transcript_text;
   const canConfirm = !needsIdentity && !needsSource && call.processing_status !== "crm_logged";
   const anyError = [manualTextMutation, linkMutation, createMutation, dismissMutation, confirmMutation, remindMutation]
@@ -279,7 +347,7 @@ function CallReviewPanel({ call, onChanged }: { call: CallSessionDetail; onChang
       <Card className="p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="font-heading text-sm font-semibold text-foreground">
-            {call.official_name ?? "Unregistered caller"} — {call.phone_ref}
+            {call.official_name ?? call.csp_name ?? "Unregistered caller"} — {call.phone_ref}
           </span>
           {call.official_id && (
             <Link to={`/relationships/${call.relationship_id}`} className="text-xs text-secondary hover:underline">
@@ -288,8 +356,9 @@ function CallReviewPanel({ call, onChanged }: { call: CallSessionDetail; onChang
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {call.direction} · {call.duration_seconds ? `${call.duration_seconds}s` : "duration unknown"} ·{" "}
+          {call.direction} · {formatCallDuration(call.duration_seconds, call.duration_source) ?? "duration unknown"} ·{" "}
           {new Date(call.started_at).toLocaleString()}
+          {call.ended_at && <> · ended {new Date(call.ended_at).toLocaleString()}</>}
           {user?.role !== "dc" && <> · by {call.dc_user_name}</>}
         </p>
       </Card>
@@ -313,6 +382,25 @@ function CallReviewPanel({ call, onChanged }: { call: CallSessionDetail; onChang
           >
             {manualTextMutation.isPending ? "Saving…" : "Save text"}
           </button>
+        </Card>
+      )}
+
+      {call.has_voice_note && (
+        <Card className="p-4">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Call recording
+          </div>
+          <audio
+            controls
+            preload="none"
+            className="w-full"
+            src={`/api/v1/calls/${call.id}/voice-note/audio`}
+          >
+            Your browser can’t play this recording.
+          </audio>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Available only until this call is logged into the CRM — it is then deleted everywhere.
+          </p>
         </Card>
       )}
 

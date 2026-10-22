@@ -26,10 +26,31 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-stub}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # DPDP master switch; when false the app sends nothing to any AI endpoint.
+      AI_DATA_PROCESSING_ENABLED: ${AI_DATA_PROCESSING_ENABLED:-true}
+      # Transcription runs on THIS server only (the `transcription` service below), reached over the
+      # internal compose network - call audio never leaves the host. Override the URL only to point
+      # at another in-house host; never a third party for production (DPDP).
+      TRANSCRIPTION_BASE_URL: ${TRANSCRIPTION_BASE_URL:-http://transcription:8000/v1}
+      TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
     volumes:
       - crm-data:/app/data
     ports:
       - "8010:8010"
+    restart: unless-stopped
+
+  # Self-hosted speech-to-text (OpenAI-compatible /v1/audio/transcriptions). On-server only: it is
+  # NOT published to any host port, so only the backend on the internal network can reach it.
+  # Default is the CPU image with a small model so it runs on any server; for production Indian-
+  # language accuracy use the CUDA image and a larger model - see deploy/self-hosted-ai/README.md.
+  transcription:
+    image: ${TRANSCRIPTION_IMAGE:-ghcr.io/speaches-ai/speaches:latest}
+    environment:
+      WHISPER__MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    expose:
+      - "8000"
     restart: unless-stopped
 
   frontend:
@@ -43,3 +64,4 @@ services:
 
 volumes:
   crm-data:
+  hf-cache:

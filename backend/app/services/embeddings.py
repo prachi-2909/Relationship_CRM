@@ -27,7 +27,7 @@ def embed(text: str) -> list[float] | None:
     if not text:
         return None
     base_url = settings.embedding_base_url or settings.llm_base_url
-    if base_url:
+    if base_url and settings.ai_data_processing_enabled:
         try:
             return _remote_embed(text, base_url)
         except Exception:

@@ -27,6 +27,10 @@ data class CallSessionSummaryDto(
     val started_at: String? = null,
     val ended_at: String? = null,
     val duration_seconds: Int? = null,
+    val duration_source: String? = null,
+    val recording_engine: String? = null,
+    val recording_capability_status: String? = null,
+    val channel: String = "knowlarity",
     val recording_status: String? = null,
     val identity_status: String? = null,
     val processing_status: String? = null,
@@ -46,6 +50,10 @@ data class CallSessionDetailDto(
     val started_at: String? = null,
     val ended_at: String? = null,
     val duration_seconds: Int? = null,
+    val duration_source: String? = null,
+    val recording_engine: String? = null,
+    val recording_capability_status: String? = null,
+    val channel: String = "knowlarity",
     val recording_status: String? = null,
     val identity_status: String? = null,
     val processing_status: String? = null,
@@ -53,12 +61,60 @@ data class CallSessionDetailDto(
     val transcript_text: String? = null,
     val transcript_source: String? = null,
     val brief: CallBriefDto? = null,
-    val recording_status_detail: String? = null
+    val recording_status_detail: String? = null,
+    val has_voice_note: Boolean = false
+)
+
+/** Reported by the device after a native-SIM call it placed itself ends - see
+ * services/call_intelligence.py::complete_native_call on the backend. */
+@Serializable
+data class NativeCallCompleteRequestDto(
+    val ended_at: String,
+    val duration_seconds: Int,
+    val connected: Boolean,
+    val recording_engine: String? = null,
+    val recording_capability_status: String? = null
+)
+
+/** A call on the DC's own SIM that didn't go through the in-app Call button - reported after
+ * the fact, either auto-detected by the phone or entered by hand (manual = true). */
+@Serializable
+data class IncomingNativeCallRequestDto(
+    val phone: String,
+    val started_at: String,
+    val ended_at: String,
+    val duration_seconds: Int,
+    val direction: String = "inbound",
+    val manual: Boolean = false
 )
 
 @Serializable
+data class CallerLookupResultDto(
+    val official_id: Int,
+    val name: String,
+    val designation: String? = null,
+    val organization_unit_name: String? = null
+)
+
+@Serializable
+data class CallerLookupRequestDto(
+    // Sent in the request body, never the URL, so the number stays out of server access logs.
+    val phone: String
+)
+
+@Serializable
+data class CallerLookupResponseDto(
+    val official: CallerLookupResultDto? = null,
+    // Server-authoritative: true for a Relationship Manager, who records EVERY call while logged in
+    // (not CRM-gated). When true the app records even though the number is not a CRM official.
+    val record_all: Boolean = false
+)
+
+/** Exactly one of official_id/phone is set - phone is the in-app manual dial pad. */
+@Serializable
 data class OutgoingCallRequestDto(
-    val official_id: Int
+    val official_id: Int? = null,
+    val phone: String? = null
 )
 
 @Serializable

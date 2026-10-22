@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session
 
 from ...db import get_db
@@ -32,11 +32,12 @@ from ...schemas.official import (
 from ...schemas.official_date import DateSet, OfficialDateOut
 from ...security.deps import get_current_user, require_roles
 from ...services import audit
+from ...services.dc_territory import can_access_unit, visible_unit_ids
 from ...services.officials import recompute_verification
 
 router = APIRouter(prefix="/officials", tags=["officials"])
 
-_EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.DC)
 _SORTABLE = {
     "name": Official.name,
     "-name": Official.name.desc(),
@@ -54,6 +55,24 @@ def _detail(official: Official) -> OfficialDetail:
     return OfficialDetail(**base, department=official.department, fields=fields)
 
 
+def _scoped_official(db: Session, official_id: int, actor: User) -> Official:
+    """A DC only ever sees/acts on officials inside their own territory -
+    enforced here, not just by hiding the search results, so a guessed id
+    can't be used to read or edit an out-of-territory official either."""
+    official = db.get(Official, official_id)
+    if official is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    if actor.role is Role.RELATIONSHIP_MANAGER:
+        # An RM has no access to SBI officials (CSPs only).
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    if actor.role is Role.DC:
+        if official.organization_unit_id is None or official.organization_unit_id not in visible_unit_ids(
+            db, actor.id
+        ):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    return official
+
+
 @router.get("", response_model=OfficialListResponse)
 def list_officials(
     q: str | None = None,
@@ -65,20 +84,37 @@ def list_officials(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    actor: User = Depends(get_current_user),
 ):
     if sort not in _SORTABLE:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown sort key")
 
     filters = [Official.status == status_filter]
     if q:
-        filters.append(Official.name.ilike(f"%{q}%"))
+        pattern = f"%{q}%"
+        filters.append(
+            or_(
+                Official.name.ilike(pattern),
+                Official.phone.ilike(pattern),
+                Official.designation.ilike(pattern),
+            )
+        )
     if unit_id is not None:
         filters.append(Official.organization_unit_id == unit_id)
     if level:
         filters.append(Official.level == level)
     if verification_status is not None:
         filters.append(Official.verification_status == verification_status)
+    if actor.role is Role.DC:
+        # A DC sees officials in their own territory, plus ones recorded at an
+        # ancestor RBO/AO (e.g. that area's shared Field Investigator).
+        scoped_units = visible_unit_ids(db, actor.id)
+        filters.append(
+            Official.organization_unit_id.in_(scoped_units) if scoped_units else false()
+        )
+    elif actor.role is Role.RELATIONSHIP_MANAGER:
+        # An RM works only with their CSPs (/csps/mine) - they have no access to SBI officials.
+        filters.append(false())
 
     total = db.scalar(select(func.count()).select_from(Official).where(*filters)) or 0
     rows = db.scalars(
@@ -103,6 +139,14 @@ def create_official(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "Organisation unit not found"
             )
+        if actor.role is Role.DC and not can_access_unit(db, actor.id, payload.organization_unit_id):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Outside your assigned territory"
+            )
+    elif actor.role is Role.DC:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "organization_unit_id is required"
+        )
 
     official = Official(
         name=payload.name,
@@ -163,12 +207,9 @@ def create_official(
 def get_official(
     official_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    actor: User = Depends(get_current_user),
 ):
-    official = db.get(Official, official_id)
-    if official is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
-    return _detail(official)
+    return _detail(_scoped_official(db, official_id, actor))
 
 
 @router.patch("/{official_id}", response_model=OfficialDetail)
@@ -178,9 +219,7 @@ def update_official(
     db: Session = Depends(get_db),
     actor: User = Depends(_EDITORS),
 ):
-    official = db.get(Official, official_id)
-    if official is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    official = _scoped_official(db, official_id, actor)
 
     data = payload.model_dump(exclude_unset=True)
     if data.get("organization_unit_id") is not None:
@@ -188,6 +227,8 @@ def update_official(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "Organisation unit not found"
             )
+        if actor.role is Role.DC and not can_access_unit(db, actor.id, data["organization_unit_id"]):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Outside your assigned territory")
 
     provenance = {p.field: p for p in official.field_provenance}
     before = {k: getattr(official, k) for k in data}
@@ -226,9 +267,7 @@ def set_field(
     if field not in PROVENANCED_FIELDS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Field is not provenanced")
 
-    official = db.get(Official, official_id)
-    if official is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    official = _scoped_official(db, official_id, actor)
 
     if field == "organization_unit_id":
         value: object = int(payload.value) if payload.value not in (None, "") else None
@@ -236,6 +275,8 @@ def set_field(
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "Organisation unit not found"
             )
+        if value is not None and actor.role is Role.DC and not can_access_unit(db, actor.id, value):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Outside your assigned territory")
     else:
         value = str(payload.value) if payload.value not in (None, "") else None
 
@@ -322,10 +363,9 @@ def official_timeline(
     official_id: int,
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    actor: User = Depends(get_current_user),
 ):
-    if db.get(Official, official_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    _scoped_official(db, official_id, actor)
 
     rows = db.scalars(
         select(AuditLog)
@@ -366,10 +406,9 @@ def official_timeline(
 def list_dates(
     official_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    actor: User = Depends(get_current_user),
 ):
-    if db.get(Official, official_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    _scoped_official(db, official_id, actor)
     rows = db.scalars(
         select(OfficialDate)
         .where(OfficialDate.official_id == official_id)
@@ -386,8 +425,7 @@ def set_date(
     db: Session = Depends(get_db),
     actor: User = Depends(_EDITORS),
 ):
-    if db.get(Official, official_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Official not found")
+    _scoped_official(db, official_id, actor)
 
     row = None
     if kind is not DateKind.PROMOTED:
@@ -454,6 +492,7 @@ def delete_date(
     db: Session = Depends(get_db),
     actor: User = Depends(_EDITORS),
 ):
+    _scoped_official(db, official_id, actor)
     row = db.get(OfficialDate, date_id)
     if row is None or row.official_id != official_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Date not found")

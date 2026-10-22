@@ -9,6 +9,16 @@ export interface User {
   status: UserStatus;
 }
 
+export interface PresenceStatus {
+  user_id: number;
+  name: string;
+  email: string;
+  role: Role;
+  is_logged_in: boolean;
+  is_online: boolean;
+  last_active_at: string | null;
+}
+
 export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   relationship_manager: "Relationship Manager",
@@ -52,6 +62,16 @@ export interface UnitStats {
   direct_officials: number;
   total_officials: number;
   total_units: number;
+}
+
+export interface TerritoryOut {
+  id: number;
+  dc_user_id: number;
+  dc_user_name: string;
+  organization_unit_id: number;
+  organization_unit_name: string;
+  organization_unit_type: string;
+  assigned_at: string;
 }
 
 // --- officials ----------------------------------------------------------
@@ -815,6 +835,8 @@ export interface ExperimentOut {
 export interface AuditEntry {
   id: number;
   actor_id: number | null;
+  actor_name: string | null;
+  actor_role: string | null;
   action: string;
   entity_type: string;
   entity_id: string | null;
@@ -858,7 +880,7 @@ export type CallProcessingStatus =
   | "approved" | "crm_logged" | "cancelled" | "recording_unavailable" | "upload_failed"
   | "transcription_failed" | "analysis_failed" | "review_rejected" | "crm_write_failed";
 export type CallIdentityStatus =
-  | "registered" | "unregistered" | "possible_identity" | "verified_new_official" | "unidentified";
+  | "registered" | "unregistered" | "possible_identity" | "verified_new_official" | "unidentified" | "csp";
 
 export const CALL_PROCESSING_STATUS_TONE: Record<CallProcessingStatus, "neutral" | "primary" | "good" | "warn" | "danger"> = {
   initiated: "neutral", ringing: "neutral", connected: "neutral", ended: "neutral",
@@ -871,7 +893,13 @@ export const CALL_PROCESSING_STATUS_TONE: Record<CallProcessingStatus, "neutral"
 
 export const CALL_IDENTITY_STATUS_TONE: Record<CallIdentityStatus, "neutral" | "primary" | "good" | "warn" | "danger"> = {
   registered: "good", unregistered: "warn", possible_identity: "primary",
-  verified_new_official: "good", unidentified: "neutral",
+  verified_new_official: "good", unidentified: "neutral", csp: "good",
+};
+
+export const CALL_IDENTITY_STATUS_LABEL: Record<CallIdentityStatus, string> = {
+  registered: "registered", unregistered: "unregistered", possible_identity: "possible identity",
+  verified_new_official: "verified new official", unidentified: "unidentified",
+  csp: "Kiosk Operator",
 };
 
 export interface CallSessionSummary {
@@ -882,10 +910,14 @@ export interface CallSessionSummary {
   phone_ref: string;
   official_id: number | null;
   official_name: string | null;
+  csp_id: number | null;
+  csp_name: string | null;
   relationship_id: number | null;
   started_at: string;
   ended_at: string | null;
   duration_seconds: number | null;
+  duration_source: string | null;
+  channel: string;
   recording_status: string;
   identity_status: CallIdentityStatus;
   processing_status: CallProcessingStatus;
@@ -894,6 +926,7 @@ export interface CallSessionSummary {
 
 export interface CallBrief {
   summary?: string;
+  highlights?: string[];
   key_points?: string[];
   decisions?: string[];
   commitments?: string[];
@@ -908,6 +941,7 @@ export interface CallSessionDetail extends CallSessionSummary {
   transcript_source: string | null;
   brief: CallBrief | null;
   recording_status_detail: string | null;
+  has_voice_note: boolean;
 }
 
 export interface CallSessionListResponse {
@@ -918,4 +952,77 @@ export interface CallSessionListResponse {
 export interface DcOption {
   id: number;
   name: string;
+  role?: string; // "dc" | "relationship_manager"
+}
+
+// --- CSPs (Customer Service Points), grouped by Relationship Manager -----
+export interface Csp {
+  id: number;
+  csp_id: string;
+  name: string;
+  mobile: string | null;
+  alternate_mobile: string | null;
+  category: string | null;
+  rm_name: string;
+  rm_user_id: number | null;
+  branch_name: string | null;
+  district: string | null;
+  state: string | null;
+  status: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  email: string | null;
+  address: string | null;
+  pincode: string | null;
+  home_phone: string | null;
+}
+
+export interface CspRmGroup {
+  rm_name: string;
+  rm_user_id: number | null;
+  count: number;
+  csps: Csp[];
+}
+
+export interface CspByRmResponse {
+  groups: CspRmGroup[];
+  total: number;
+}
+
+export interface CspProfileResponse {
+  csp: Csp;
+  calls: CallSessionDetail[];
+  calls_total: number;
+}
+
+export interface NameValue {
+  name: string;
+  value: number;
+}
+
+export interface UpcomingBirthday {
+  csp_id: string;
+  name: string;
+  rm_name: string;
+  date: string;
+  in_days: number;
+  email: string | null;
+}
+
+export interface DashboardOverview {
+  kpis: {
+    active_csps: number;
+    relationship_managers: number;
+    sbi_officials: number;
+    calls_total: number;
+    recordings: number;
+    birthdays_7d: number;
+  };
+  csps_by_rm: NameValue[];
+  csps_by_category: NameValue[];
+  csps_by_state: NameValue[];
+  calls_by_rm: NameValue[];
+  calls_by_direction: NameValue[];
+  calls_timeline: { date: string; value: number }[];
+  upcoming_birthdays: UpcomingBirthday[];
 }

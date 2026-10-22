@@ -3,10 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { Badge } from "../components/Badge";
+import { CakeIcon, MailIcon, SectionCard } from "../components/sectionUi";
 import { Card, EmptyState, PageHeader, Spinner } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import type {
+  CspByRmResponse,
+  CspRmGroup,
   OfficialListResponse,
   OrgUnit,
   OrgUnitNode,
@@ -34,6 +37,9 @@ export function OrganisationPage() {
   const isAdmin = user?.role === "admin";
   const queryClient = useQueryClient();
 
+  // The Organisation section has two sides: the SBI org hierarchy (existing drill-down) and the
+  // CSP network (RM-wise). null = the landing with one card for each.
+  const [section, setSection] = useState<"sbi" | "csp" | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<Crumb[]>([]);
   const [autoDrilled, setAutoDrilled] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -51,18 +57,18 @@ export function OrganisationPage() {
   const rootsQuery = useQuery({
     queryKey: ["units", "roots"],
     queryFn: () => api<UnitSummary[]>("/organization/units?roots_only=true&status=active"),
-    enabled: showingRoots,
+    enabled: section === "sbi" && showingRoots,
   });
 
   // Land on the sole Corporate Centre's own overview + its RBOs, not a
   // trivial single-tile screen the admin has to click through first.
   useEffect(() => {
-    if (!autoDrilled && showingRoots && rootsQuery.data?.length === 1) {
+    if (section === "sbi" && !autoDrilled && showingRoots && rootsQuery.data?.length === 1) {
       const root = rootsQuery.data[0];
       setBreadcrumb([{ id: root.id, name: root.name, type_code: root.type_code }]);
       setAutoDrilled(true);
     }
-  }, [autoDrilled, showingRoots, rootsQuery.data]);
+  }, [section, autoDrilled, showingRoots, rootsQuery.data]);
 
   const childrenQuery = useQuery({
     queryKey: ["units", "children", currentId],
@@ -80,7 +86,7 @@ export function OrganisationPage() {
 
   const officialsQuery = useQuery({
     queryKey: ["officials", "by-unit", currentId],
-    queryFn: () => api<OfficialListResponse>(`/officials?unit_id=${currentId}&limit=200`),
+    queryFn: () => api<OfficialListResponse>(`/officials?unit_id=${currentId}&limit=100`),
     enabled: isLeaf,
   });
 
@@ -144,12 +150,51 @@ export function OrganisationPage() {
   const btnGhost =
     "rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted";
 
+  // Landing: pick a side of the organisation.
+  if (section === null) {
+    return (
+      <div>
+        <PageHeader
+          title="Organisation"
+          description="Two sides of the network — SBI's own hierarchy, and the CSP agents your Relationship Managers run."
+        />
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <SectionCard
+            title="SBI"
+            badge="SBI"
+            subtitle="Corporate Centre, RBOs and branches, and the officials in each."
+            accent="from-primary to-[hsl(211_90%_38%)]"
+            onClick={() => setSection("sbi")}
+          />
+          <SectionCard
+            title="CSP Network"
+            badge="CSP"
+            subtitle="Customer Service Points, grouped by the Relationship Manager who runs them."
+            accent="from-saffron to-[hsl(36_78%_46%)]"
+            onClick={() => setSection("csp")}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (section === "csp") {
+    return <CspNetwork onBack={() => setSection(null)} />;
+  }
+
   return (
     <div>
       <PageHeader
         title="Organisation"
         description="Drill into the hierarchy — Corporate Centre, its RBOs, and each RBO's branches — instead of one long flat list."
       />
+
+      <button
+        onClick={() => setSection(null)}
+        className="mt-3 rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+      >
+        ← SBI / CSP
+      </button>
 
       <div className="mt-4 flex flex-wrap items-center gap-1 text-sm">
         <button
@@ -297,31 +342,198 @@ export function OrganisationPage() {
           <UnitGrid units={childrenQuery.data} typeLabel={typeLabel} isAdmin={isAdmin} onSelect={drillInto} onToggleArchive={toggleArchive} />
         )}
 
-        {isLeaf && (
+        {isLeaf && officialsQuery.isPending && <Spinner />}
+        {isLeaf && officialsQuery.error instanceof ApiError && (
+          <p className="text-sm text-destructive">{officialsQuery.error.message}</p>
+        )}
+        {isLeaf && officialsQuery.data && officialsQuery.data.items.length > 0 && (
           <Card className="p-4">
             <div className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Officials at {currentCrumb?.name}
             </div>
-            {officialsQuery.isPending && <Spinner />}
-            {officialsQuery.data && officialsQuery.data.items.length === 0 && (
-              <EmptyState title="No officials here" hint="Nothing is directly attached to this unit yet." />
-            )}
-            {officialsQuery.data && officialsQuery.data.items.length > 0 && (
-              <ul className="divide-y divide-border">
-                {officialsQuery.data.items.map((o) => (
-                  <li key={o.id} className="py-2">
-                    <Link to={`/officials/${o.id}`} className="flex items-center justify-between gap-2 text-sm hover:underline">
-                      <span className="font-medium text-foreground">{o.name}</span>
-                      <span className="text-xs text-muted-foreground">{o.designation ?? "—"}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul className="divide-y divide-border">
+              {officialsQuery.data.items.map((o) => (
+                <li key={o.id} className="py-2">
+                  <Link to={`/officials/${o.id}`} className="flex items-center justify-between gap-2 text-sm hover:underline">
+                    <span className="font-medium text-foreground">{o.name}</span>
+                    <span className="text-xs text-muted-foreground">{o.designation ?? "—"}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </Card>
         )}
       </div>
     </div>
+  );
+}
+
+function CspNetwork({ onBack }: { onBack: () => void }) {
+  const [selectedRm, setSelectedRm] = useState<CspRmGroup | null>(null);
+
+  const query = useQuery({
+    queryKey: ["csps", "by-rm"],
+    queryFn: () => api<CspByRmResponse>("/csps/by-rm"),
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="CSP Network"
+        description="Active Customer Service Points, grouped by the Relationship Manager who runs them."
+      />
+
+      <div className="mt-3 flex flex-wrap items-center gap-1 text-sm">
+        <button
+          onClick={() => {
+            setSelectedRm(null);
+            onBack();
+          }}
+          className="rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:bg-muted"
+        >
+          ← SBI / CSP
+        </button>
+        <span className="text-muted-foreground/40">/</span>
+        <button
+          onClick={() => setSelectedRm(null)}
+          className={`rounded-md px-2 py-1 font-medium transition-colors ${
+            selectedRm === null ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          Relationship Managers
+        </button>
+        {selectedRm && (
+          <span className="flex items-center gap-1">
+            <span className="text-muted-foreground/40">/</span>
+            <span className="rounded-md bg-primary/10 px-2 py-1 font-medium text-primary">
+              {selectedRm.rm_name}
+            </span>
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4">
+        {query.isPending && <Spinner />}
+        {query.error instanceof ApiError && (
+          <p className="text-sm text-destructive">{query.error.message}</p>
+        )}
+
+        {/* RM cards */}
+        {query.data && selectedRm === null && (
+          <>
+            <p className="mb-3 text-sm text-muted-foreground">
+              {query.data.total} active CSP{query.data.total === 1 ? "" : "s"} across{" "}
+              {query.data.groups.length} RM{query.data.groups.length === 1 ? "" : "s"}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {query.data.groups.map((g, i) => (
+                <button
+                  key={g.rm_name}
+                  onClick={() => setSelectedRm(g)}
+                  className="group flex flex-col items-start gap-1.5 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <span className="flex w-full items-center gap-2">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DEPTH_DOT[i % DEPTH_DOT.length]}`} />
+                    <span className="truncate font-medium text-foreground">{g.rm_name}</span>
+                  </span>
+                  <Badge tone="neutral">
+                    {g.count} CSP{g.count === 1 ? "" : "s"}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* One RM's CSPs */}
+        {selectedRm && <CspList group={selectedRm} />}
+      </div>
+    </div>
+  );
+}
+
+function formatDob(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function CspList({ group }: { group: CspRmGroup }) {
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const csps = needle
+    ? group.csps.filter(
+        (c) =>
+          c.csp_id.toLowerCase().includes(needle) ||
+          c.name.toLowerCase().includes(needle) ||
+          (c.mobile ?? "").includes(needle),
+      )
+    : group.csps;
+
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {group.count} CSP{group.count === 1 ? "" : "s"} under {group.rm_name}
+        </div>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search CSP code, name or number…"
+          className="w-full max-w-xs rounded-lg border border-input bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
+        />
+      </div>
+      {csps.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">No CSP matches “{q}”.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {csps.map((c) => {
+            const dob = formatDob(c.date_of_birth);
+            return (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                      {c.csp_id}
+                    </span>
+                    <span className="truncate font-medium text-foreground">{c.name}</span>
+                    {c.category && <Badge tone="neutral">{c.category}</Badge>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {[c.branch_name, c.district, c.state].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                    {dob && (
+                      <span className="inline-flex items-center gap-1">
+                        <CakeIcon className="h-3.5 w-3.5" /> {dob}
+                      </span>
+                    )}
+                    {c.email && (
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <MailIcon className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{c.email}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right text-sm">
+                  {c.mobile ? (
+                    <a href={`tel:${c.mobile}`} className="font-medium text-primary hover:underline">
+                      {c.mobile}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">no number</span>
+                  )}
+                  {c.alternate_mobile && (
+                    <div className="text-xs text-muted-foreground">alt: {c.alternate_mobile}</div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
 

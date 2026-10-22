@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Release/default network policy: cleartext (plain HTTP) is forbidden everywhere, so the app
+  will only ever talk to the CRM over HTTPS. The debug build overlays this file
+  (src/debug/res/xml/network_security_config.xml) to allow plain HTTP to the LAN dev server only.
+
+  Certificate pinning: once the production TLS certificate is known, add a <domain-config> for the
+  CRM host with a <pin-set> of the leaf (and a backup) SHA-256 SPKI pins. It is intentionally left
+  out here rather than filled with a placeholder, because a wrong pin would brick every install.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

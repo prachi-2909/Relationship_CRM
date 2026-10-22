@@ -5,6 +5,7 @@ import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { CallIntelligencePage } from "./pages/CallIntelligencePage";
+import { CspProfilePage } from "./pages/CspProfilePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InteractionsPage } from "./pages/InteractionsPage";
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="organisation" element={<OrganisationPage />} />
           <Route path="officials" element={<OfficialsPage />} />
           <Route path="officials/:id" element={<OfficialProfilePage />} />
+          <Route path="kiosk-operators/:id" element={<CspProfilePage />} />
           <Route path="relationships" element={<RelationshipsPage />} />
           <Route path="relationships/:id" element={<RelationshipDetailPage />} />
           <Route path="interactions" element={<InteractionsPage />} />

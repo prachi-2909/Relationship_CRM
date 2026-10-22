@@ -32,6 +32,7 @@ from ...services.llm import extract_interaction
 router = APIRouter(prefix="/interactions", tags=["interactions"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 
 
 def _apply_extraction(interaction: Interaction) -> None:
@@ -97,7 +98,7 @@ def list_interactions(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     filters = []
     if relationship_id is not None:
@@ -186,7 +187,7 @@ def create_interaction(
 def get_interaction(
     interaction_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     interaction = db.get(Interaction, interaction_id)
     if interaction is None:

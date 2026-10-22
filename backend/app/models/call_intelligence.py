@@ -42,6 +42,9 @@ class CallSessionStatus(str, enum.Enum):
     ANALYSIS_FAILED = "analysis_failed"
     REVIEW_REJECTED = "review_rejected"
     CRM_WRITE_FAILED = "crm_write_failed"
+    # Audio existed, was used (transcribed) or not, and has now been permanently deleted -
+    # distinct from NO_RECORDING (no audio was ever captured in the first place).
+    PURGED = "purged"
 
 
 class IdentityStatus(str, enum.Enum):
@@ -50,6 +53,9 @@ class IdentityStatus(str, enum.Enum):
     POSSIBLE_IDENTITY = "possible_identity"
     VERIFIED_NEW_OFFICIAL = "verified_new_official"
     UNIDENTIFIED = "unidentified"
+    # The number belongs to an active Kiosk Operator (CSP) - a known, registered
+    # counterparty, just in the CSP directory rather than the Officials hierarchy.
+    CSP = "csp"
 
 
 _status = SAEnum(CallSessionStatus, native_enum=False, length=24, name="call_session_status")
@@ -67,12 +73,30 @@ class CallSession(Base, TimestampMixin):
     direction: Mapped[Direction] = mapped_column(_direction, nullable=False)
     phone_ref: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     knowlarity_call_id: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    # "knowlarity" | "manual" (DC-typed number, still Knowlarity-routed) | "android_native"
     channel: Mapped[str] = mapped_column(String(16), nullable=False, default="knowlarity")
+    # A locally-generated id the Android app creates when it arms a native call
+    # attempt - idempotency for a retried completion report. Not unique (a retry
+    # should update the same row, not collide like knowlarity_call_id would).
+    native_call_ref: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # "carrier" (Knowlarity-reported, exact) | "device_estimated" (native mode:
+    # OFFHOOK->IDLE elapsed time, which conflates ring-time and talk-time on a
+    # non-privileged observer - never presented as carrier-precise).
+    duration_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Which RecordingEngine (Android-side) attempted capture, and what it judged its own
+    # capability to be - purely descriptive telemetry, not used for any access decision.
+    recording_engine: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    recording_capability_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     official_id: Mapped[int | None] = mapped_column(
         ForeignKey("officials.id", ondelete="SET NULL"), nullable=True, index=True
     )
     relationship_id: Mapped[int | None] = mapped_column(
         ForeignKey("relationships.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Set when the number matches an active Kiosk Operator (CSP). A call is tied to
+    # EITHER an official (hierarchy) OR a CSP (directory), never both.
+    csp_id: Mapped[int | None] = mapped_column(
+        ForeignKey("csps.id", ondelete="SET NULL"), nullable=True, index=True
     )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -92,6 +116,7 @@ class CallSession(Base, TimestampMixin):
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     official = relationship("Official", lazy="joined")
+    csp = relationship("Csp", lazy="joined")
     dc_user = relationship("User", lazy="joined")
     recording: Mapped["CallRecording | None"] = relationship(
         back_populates="call_session", uselist=False, cascade="all, delete-orphan"

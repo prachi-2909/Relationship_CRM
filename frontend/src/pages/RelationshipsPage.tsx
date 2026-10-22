@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { Badge } from "../components/Badge";
+import { KioskOperators } from "../components/KioskOperators";
 import { bandFor } from "../components/ScoreDial";
+import { SectionCard } from "../components/sectionUi";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
@@ -28,6 +30,8 @@ export function RelationshipsPage() {
   const queryClient = useQueryClient();
   const canEdit = user?.role === "admin" || user?.role === "relationship_manager";
 
+  // Bifurcate relationships into the SBI-official side and the Kiosk-Operator (CSP) side.
+  const [section, setSection] = useState<"sbi" | "csp" | null>(null);
   const [mine, setMine] = useState(false);
   const [status, setStatus] = useState<RelationshipStatus | "">("");
   const [importance, setImportance] = useState<Importance | "">("");
@@ -48,14 +52,54 @@ export function RelationshipsPage() {
   const listQuery = useQuery({
     queryKey: ["relationships", mine, status, importance, q, offset],
     queryFn: () => api<RelationshipListResponse>(`/relationships?${params}`),
+    enabled: section === "sbi",
   });
 
   const data = listQuery.data;
   const input =
     "rounded-md border border-input bg-background px-3 py-1.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
 
+  if (section === null) {
+    return (
+      <div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">Relationships</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick a side — relationships with SBI officials, or the Kiosk Operators (CSPs) your RMs run.
+          </p>
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <SectionCard
+            title="SBI Officials"
+            badge="SBI"
+            subtitle="Scored relationships with bank officials across the hierarchy."
+            accent="from-primary to-[hsl(211_90%_38%)]"
+            onClick={() => setSection("sbi")}
+          />
+          <SectionCard
+            title="Kiosk Operators"
+            badge="CSP"
+            subtitle="Customer Service Points, grouped by the Relationship Manager who runs them."
+            accent="from-saffron to-[hsl(36_78%_46%)]"
+            onClick={() => setSection("csp")}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (section === "csp") {
+    return <KioskOperators onBack={() => setSection(null)} />;
+  }
+
   return (
     <div>
+      <button
+        onClick={() => setSection(null)}
+        className="mb-3 rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+      >
+        &larr; SBI Officials / Kiosk Operators
+      </button>
       <div className="flex items-center justify-between">
         <h1 className="font-heading text-xl font-bold text-foreground">Relationships</h1>
         {canEdit && (

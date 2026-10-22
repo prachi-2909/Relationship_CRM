@@ -32,6 +32,7 @@ from ...services.importance import recompute as recompute_importance
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 
 _EDITORS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER)
+_VIEWERS = require_roles(Role.ADMIN, Role.RELATIONSHIP_MANAGER, Role.APPROVER_VIEWER)
 _SORTABLE = {
     "score": Relationship.score,
     "-score": Relationship.score.desc(),
@@ -79,7 +80,7 @@ def list_relationships(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(_VIEWERS),
 ):
     if sort not in _SORTABLE:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unknown sort key")
@@ -170,7 +171,7 @@ def create_relationship(
 def get_relationship(
     relationship_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     return _detail(db, _load(db, relationship_id))
 
@@ -245,7 +246,7 @@ def score_history(
     relationship_id: int,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     _load(db, relationship_id)
     rows = db.scalars(
@@ -261,7 +262,7 @@ def score_history(
 def relationship_brief(
     relationship_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_VIEWERS),
 ):
     """A read-only synthesis of the relationship: what matters, what changed,
     whether there's an opening to reconnect, and what the next interaction

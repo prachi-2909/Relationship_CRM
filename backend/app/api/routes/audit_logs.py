@@ -21,6 +21,7 @@ def list_audit_logs(
     entity_type: str | None = None,
     entity_id: str | None = None,
     actor_id: int | None = None,
+    actor_role: Role | None = None,
     since: datetime | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -38,6 +39,9 @@ def list_audit_logs(
         filters.append(AuditLog.actor_id == actor_id)
     if since is not None:
         filters.append(AuditLog.at >= since)
+    if actor_role is not None:
+        role_actor_ids = select(User.id).where(User.role == actor_role)
+        filters.append(AuditLog.actor_id.in_(role_actor_ids))
 
     total = db.scalar(select(func.count()).select_from(AuditLog).where(*filters)) or 0
     rows = db.scalars(
@@ -47,9 +51,20 @@ def list_audit_logs(
         .limit(limit)
         .offset(offset)
     ).all()
-    return AuditListResponse(
-        items=[AuditEntry.model_validate(r) for r in rows],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+
+    actor_ids = {r.actor_id for r in rows if r.actor_id is not None}
+    actors = {
+        u.id: u for u in db.scalars(select(User).where(User.id.in_(actor_ids))).all()
+    }
+    items = []
+    for r in rows:
+        actor = actors.get(r.actor_id) if r.actor_id is not None else None
+        entry = AuditEntry.model_validate(r).model_copy(
+            update={
+                "actor_name": actor.name if actor else None,
+                "actor_role": actor.role.value if actor else None,
+            }
+        )
+        items.append(entry)
+
+    return AuditListResponse(items=items, total=total, limit=limit, offset=offset)
