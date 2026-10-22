@@ -30,6 +30,7 @@ const NAV: NavGroup[] = [
       { to: "/organisation", label: "Organisation", hiddenForDc: true },
       { to: "/officials", label: "Officials", hiddenForDc: true },
       { to: "/relationships", label: "Relationships", hiddenForDc: true },
+      { to: "/birthday-wishes", label: "Birthday Wishes", hiddenForDc: true },
       { to: "/interactions", label: "Interactions", hiddenForDc: true },
       { to: "/opportunities", label: "Opportunities", hiddenForDc: true },
       { to: "/follow-ups", label: "Follow-ups", hiddenForDc: true },

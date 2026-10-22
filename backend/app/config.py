@@ -25,6 +25,13 @@ class Settings(BaseSettings):
 
     secret_key: str = "dev-insecure-change-me"
 
+    # A stable INBOUND API key for connecting another agent / service to this CRM
+    # later, without a human login that expires. Stored in .env (never committed).
+    # NOTE: no endpoint consumes this yet - it is a reserved slot only. Wiring it to
+    # an X-API-Key auth path (scoped access, rate-limit, audit) is a deliberate
+    # future step, because a static key grants programmatic access to the API.
+    crm_api_key: str | None = None
+
     # AI extraction. With no base URL, a deterministic offline stub is used so the
     # pipeline stays testable; set these to point at any OpenAI-compatible endpoint
     # (Ollama, vLLM, NVIDIA NIM, a hosted gateway).
@@ -154,7 +161,7 @@ class Settings(BaseSettings):
     # only the shared API key. Set gmail_mcp_api_key via env / .env; nothing is sent without it.
     gmail_mcp_url: str = "https://indev.eko.in/gmail/mcp"
     gmail_mcp_api_key: str | None = None
-    smtp_from_name: str = "SBI Relationship Team"
+    smtp_from_name: str = "Eko Relationship Team"
     # TESTING SAFETY: while True, NO real email is ever sent - birthday wishes are only drafted
     # (recipient + subject + body returned/logged for review). Flip to False to actually send.
     email_draft_only: bool = True

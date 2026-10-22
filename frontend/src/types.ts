@@ -995,6 +995,28 @@ export interface CspProfileResponse {
   calls_total: number;
 }
 
+export interface BirthdayWishDraft {
+  id: number;
+  csp_id: string;
+  name: string;
+  email: string | null;
+  rm_name: string;
+  in_days: number;
+  already_sent: boolean;
+  subject: string;
+  message: string;
+  generated_by: string;
+}
+
+export interface BirthdayWishesPreview {
+  date: string;
+  gmail_configured: boolean;
+  draft_only: boolean;
+  wishes_enabled: boolean;
+  today: BirthdayWishDraft[];
+  upcoming: BirthdayWishDraft[];
+}
+
 export interface NameValue {
   name: string;
   value: number;

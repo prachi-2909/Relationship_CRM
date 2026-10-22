@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...config import get_settings
 from ...db import get_db
 from ...models.call_intelligence import CallSession
 from ...models.csp import Csp, CspStatus
@@ -15,6 +16,8 @@ from ...schemas.call_intelligence import CallSessionDetail
 from ...schemas.csp import CspByRmResponse, CspOut, CspProfileResponse, CspRmGroup
 from ...security.deps import get_current_user, require_roles
 from ...services import csp_sync
+
+settings = get_settings()
 
 router = APIRouter(prefix="/csps", tags=["csps"])
 
@@ -106,6 +109,90 @@ def birthdays_today(db: Session = Depends(get_db), _: User = Depends(_VIEWERS)):
             for c in rows
         ],
     }
+
+
+@router.get("/birthday-wishes/preview")
+def birthday_wishes_preview(db: Session = Depends(get_db), actor: User = Depends(_VIEWERS)):
+    """Read-only preview of the exact personalised, bilingual birthday messages that WOULD be sent -
+    today's sendable wishes plus the next 7 days coming up. Never sends anything. An RM sees only
+    their own CSPs; admins/viewers see all."""
+    from datetime import date
+
+    from ...services import birthdays
+    from ...services import email as email_svc
+
+    today = date.today()
+    is_rm = actor.role == Role.RELATIONSHIP_MANAGER
+
+    def mine(csp: Csp) -> bool:
+        return not is_rm or csp.rm_user_id == actor.id
+
+    def draft_for(csp: Csp, in_days: int) -> dict:
+        return {
+            "id": csp.id, "csp_id": csp.csp_id, "name": csp.name, "email": csp.email,
+            "rm_name": csp.rm_name, "in_days": in_days,
+            "already_sent": csp.last_birthday_wish_on == today,
+            **birthdays.personalize(db, csp),
+        }
+
+    # Include already-wished CSPs too (shown as "Sent" in the UI) so the day's list stays complete.
+    todays = [c for c in birthdays.todays_birthday_csps(db, today) if mine(c)]
+    upcoming = [(c, d) for c, d in birthdays.upcoming_birthday_csps(db, days=30, today=today) if mine(c)]
+
+    return {
+        "date": today.isoformat(),
+        "gmail_configured": email_svc.is_configured(),
+        "draft_only": settings.email_draft_only,
+        "wishes_enabled": settings.csp_birthday_wishes_enabled,
+        "today": [draft_for(c, 0) for c in todays],
+        "upcoming": [draft_for(c, d) for c, d in upcoming],
+    }
+
+
+@router.post("/{csp_pk}/birthday-wish")
+def send_one_birthday_wish(
+    csp_pk: int, db: Session = Depends(get_db), actor: User = Depends(_VIEWERS)
+):
+    """Send ONE CSP's birthday wish right now, from the Birthday Wishes page's Send button. This is an
+    explicit human action, so it sends for real even while the automatic daily job is off / in
+    draft-only mode. Idempotent: a CSP already wished today is not re-sent. An RM may send only to
+    their own CSPs."""
+    from datetime import date
+
+    from ...services import audit
+    from ...services import birthdays
+    from ...services import email as email_svc
+
+    if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
+        raise HTTPException(status_code=403, detail="You are not allowed to send wishes")
+    csp = db.get(Csp, csp_pk)
+    if csp is None or csp.status != CspStatus.ACTIVE:
+        raise HTTPException(status_code=404, detail="CSP not found")
+    if actor.role == Role.RELATIONSHIP_MANAGER and csp.rm_user_id != actor.id:
+        raise HTTPException(status_code=404, detail="CSP not found")
+    if not (csp.email and "@" in csp.email):
+        raise HTTPException(status_code=400, detail="This CSP has no email on file")
+    if not email_svc.is_configured():
+        raise HTTPException(status_code=400, detail="Gmail sender is not configured")
+
+    today = date.today()
+    if csp.last_birthday_wish_on == today:
+        return {"ok": True, "already_sent": True, "sent_to": csp.email}
+
+    draft = birthdays.personalize(db, csp)
+    result = email_svc.send_email(
+        to=csp.email, name=birthdays._first_name(csp.name),
+        message=draft["message"], subject=draft["subject"],
+    )
+    if not result.ok:
+        raise HTTPException(status_code=502, detail=f"Send failed: {result.error}")
+    csp.last_birthday_wish_on = today
+    audit.record(
+        db, action="csp.birthday_wish_sent", entity_type="csp", entity_id=csp.id,
+        actor_id=actor.id, after={"email": csp.email},
+    )
+    db.commit()
+    return {"ok": True, "sent_to": csp.email}
 
 
 @router.post("/birthday-wishes")

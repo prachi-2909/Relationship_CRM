@@ -16,7 +16,7 @@ import {
 } from "recharts";
 
 import { Button, Card, inputClass, PageHeader, SectionLabel } from "../components/ui";
-import { CakeIcon, MailIcon } from "../components/sectionUi";
+import { ArrowRightIcon, CakeIcon, MailIcon } from "../components/sectionUi";
 import { api, ApiError } from "../lib/api";
 import type { AskResponse, DashboardOverview, NameValue } from "../types";
 
@@ -202,25 +202,30 @@ export function DashboardPage() {
               ) : (
                 <ul className="divide-y divide-border">
                   {data.upcoming_birthdays.map((b) => (
-                    <li key={b.csp_id} className="flex items-center gap-3 py-2">
-                      <span
-                        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums ${
-                          b.in_days === 0
-                            ? "bg-[#DB2777] text-white"
-                            : "bg-[#DB2777]/10 text-[#DB2777]"
-                        }`}
+                    <li key={b.csp_id}>
+                      <Link
+                        to={`/birthday-wishes?csp=${encodeURIComponent(b.csp_id)}`}
+                        title="See the message that would be sent"
+                        className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted"
                       >
-                        {b.in_days === 0 ? <CakeIcon className="h-4 w-4" /> : `${b.in_days}d`}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-foreground">{b.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {b.in_days === 0 ? "Today" : birthdayDate(b.date)} · RM {b.rm_name}
+                        <span
+                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold tabular-nums ${
+                            b.in_days === 0
+                              ? "bg-[#DB2777] text-white"
+                              : "bg-[#DB2777]/10 text-[#DB2777]"
+                          }`}
+                        >
+                          {b.in_days === 0 ? <CakeIcon className="h-4 w-4" /> : `${b.in_days}d`}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">{b.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {b.in_days === 0 ? "Today" : birthdayDate(b.date)} · RM {b.rm_name}
+                          </div>
                         </div>
-                      </div>
-                      {b.email && (
-                        <MailIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
+                        {b.email && <MailIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                        <ArrowRightIcon className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                      </Link>
                     </li>
                   ))}
                 </ul>
