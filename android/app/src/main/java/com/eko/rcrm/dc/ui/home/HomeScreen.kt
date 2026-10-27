@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -63,8 +62,7 @@ fun HomeScreen(
     onAllOfficials: () -> Unit,
     onManualDial: () -> Unit,
     onLogCall: () -> Unit,
-    onPendingQueue: () -> Unit,
-    onCallHistory: () -> Unit,
+    onCalls: () -> Unit,
     onProfile: () -> Unit,
     onMyCsps: () -> Unit,
     onLoggedOut: () -> Unit,
@@ -183,7 +181,7 @@ fun HomeScreen(
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.height(299.dp)
+                modifier = Modifier.height(206.dp)
             ) {
                 items(quickActions(uiState.pendingCount)) { action ->
                     IconTile(
@@ -197,8 +195,7 @@ fun HomeScreen(
                             "Log a call" -> onLogCall
                             // RM: "All officials" points at their CSPs instead of SBI officials.
                             "All officials" -> if (uiState.isRm) onMyCsps else onAllOfficials
-                            "Pending queue" -> onPendingQueue
-                            else -> onCallHistory
+                            else -> onCalls   // "Calls" (pending + history)
                         }
                     )
                 }
@@ -237,8 +234,7 @@ private data class QuickAction(
 private fun quickActions(pendingCount: Int): List<QuickAction> = listOf(
     QuickAction("Dial a number", Icons.Default.Dialpad, Color(0xFF0092CC), Color(0xFFE6F1FB)),
     QuickAction("All officials", Icons.Default.People, Color(0xFF1F6548), Color(0xFFE1F5EE)),
-    QuickAction("Pending queue", Icons.Default.PendingActions, Color(0xFF854F0B), Color(0xFFFAEEDA), badgeCount = pendingCount),
-    QuickAction("Call history", Icons.Default.History, Color(0xFF993556), Color(0xFFFBEAF0)),
+    QuickAction("Calls", Icons.Default.History, Color(0xFF854F0B), Color(0xFFFAEEDA), badgeCount = pendingCount),
     QuickAction("Log a call", Icons.Default.EditNote, Color(0xFF5B4BA8), Color(0xFFEEEDFE))
 )
 

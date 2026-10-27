@@ -2,7 +2,10 @@ package com.eko.rcrm.dc.data.remote
 
 import com.eko.rcrm.dc.data.remote.dto.AppVersionDto
 import com.eko.rcrm.dc.data.remote.dto.AttestChallengeDto
+import com.eko.rcrm.dc.data.remote.dto.CommitmentDto
+import com.eko.rcrm.dc.data.remote.dto.CommitmentStatusRequestDto
 import com.eko.rcrm.dc.data.remote.dto.CspDto
+import com.eko.rcrm.dc.data.remote.dto.PreCallDto
 import com.eko.rcrm.dc.data.remote.dto.AttestVerifyRequestDto
 import com.eko.rcrm.dc.data.remote.dto.AttestVerifyResponseDto
 import com.eko.rcrm.dc.data.remote.dto.CallSessionDetailDto
@@ -149,6 +152,17 @@ interface ApiService {
 
     @GET("csps/mine")
     suspend fun getMyCsps(): List<CspDto>
+
+    // Pre-call intelligence for one of the RM's CSPs - the same briefing the web CRM shows. The server
+    // answers 404 for a CSP that is not the caller's, so an id typed in by hand reveals nothing.
+    @GET("csps/{id}/pre-call")
+    suspend fun getCspPreCall(@Path("id") cspId: Int): PreCallDto
+
+    @POST("csps/commitments/{id}/status")
+    suspend fun setCommitmentStatus(
+        @Path("id") commitmentId: Int,
+        @Body request: CommitmentStatusRequestDto
+    ): CommitmentDto
 
     // ---- App self-update ----
 

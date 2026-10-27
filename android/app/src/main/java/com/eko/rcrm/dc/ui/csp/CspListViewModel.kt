@@ -20,9 +20,24 @@ import javax.inject.Inject
 
 data class CspListUiState(
     val items: List<Csp> = emptyList(),
+    val query: String = "",
     val isLoading: Boolean = false,
     val error: String? = null
-)
+) {
+    /** CSPs matching the current search (by name, CSP code, branch, or either number). */
+    val visibleItems: List<Csp>
+        get() {
+            val q = query.trim().lowercase()
+            if (q.isEmpty()) return items
+            return items.filter { c ->
+                c.name.lowercase().contains(q) ||
+                    c.cspId.lowercase().contains(q) ||
+                    (c.branchName?.lowercase()?.contains(q) == true) ||
+                    (c.mobile?.contains(q) == true) ||
+                    (c.alternateMobile?.contains(q) == true)
+            }
+        }
+}
 
 @HiltViewModel
 class CspListViewModel @Inject constructor(
@@ -41,6 +56,10 @@ class CspListViewModel @Inject constructor(
 
     init {
         refresh()
+    }
+
+    fun onQueryChange(value: String) {
+        _uiState.update { it.copy(query = value) }
     }
 
     fun refresh() {

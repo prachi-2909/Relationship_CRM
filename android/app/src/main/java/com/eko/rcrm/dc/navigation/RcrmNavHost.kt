@@ -9,8 +9,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.eko.rcrm.dc.ui.history.CallHistoryScreen
+import com.eko.rcrm.dc.ui.calls.CallsScreen
 import com.eko.rcrm.dc.ui.csp.CspListScreen
+import com.eko.rcrm.dc.ui.csp.PreCallScreen
 import com.eko.rcrm.dc.ui.home.HomeScreen
 import com.eko.rcrm.dc.ui.login.LoginScreen
 import com.eko.rcrm.dc.ui.manualdial.ManualDialScreen
@@ -20,7 +21,6 @@ import com.eko.rcrm.dc.ui.officialdetail.OfficialDetailScreen
 import com.eko.rcrm.dc.ui.officialedit.OfficialEditScreen
 import com.eko.rcrm.dc.ui.officiallist.OfficialListScreen
 import com.eko.rcrm.dc.ui.officialsearch.OfficialSearchScreen
-import com.eko.rcrm.dc.ui.pending.PendingQueueScreen
 import com.eko.rcrm.dc.ui.profile.ProfileScreen
 import com.eko.rcrm.dc.ui.recording.RecordingCapabilityScreen
 import com.eko.rcrm.dc.ui.review.CallReviewScreen
@@ -28,6 +28,7 @@ import com.eko.rcrm.dc.ui.session.SessionViewModel
 import com.eko.rcrm.dc.ui.voicenote.VoiceNoteRecordingScreen
 
 private val callSessionIdArg = navArgument(Routes.CALL_REVIEW_ARG) { type = NavType.IntType }
+private val preCallCspArg = navArgument(Routes.PRE_CALL_ARG) { type = NavType.IntType }
 private val officialDetailIdArg = navArgument(Routes.OFFICIAL_DETAIL_ARG) { type = NavType.IntType }
 private val officialEditIdArg = navArgument(Routes.OFFICIAL_EDIT_ARG) {
     type = NavType.IntType
@@ -69,8 +70,7 @@ fun RcrmNavHost(navController: NavHostController = rememberNavController()) {
                 onAllOfficials = { navController.navigate(Routes.allOfficials()) },
                 onManualDial = { navController.navigate(Routes.MANUAL_DIAL) },
                 onLogCall = { navController.navigate(Routes.MANUAL_LOG) },
-                onPendingQueue = { navController.navigate(Routes.PENDING_QUEUE) },
-                onCallHistory = { navController.navigate(Routes.CALL_HISTORY) },
+                onCalls = { navController.navigate(Routes.CALLS) },
                 onProfile = { navController.navigate(Routes.PROFILE) },
                 onMyCsps = { navController.navigate(Routes.MY_CSPS) },
                 onLoggedOut = {
@@ -83,6 +83,14 @@ fun RcrmNavHost(navController: NavHostController = rememberNavController()) {
 
         composable(Routes.MY_CSPS) {
             CspListScreen(
+                onBack = { navController.popBackStack() },
+                onCallStarted = { callSessionId -> navController.navigate(Routes.callReview(callSessionId)) },
+                onOpenBrief = { cspPk -> navController.navigate(Routes.preCall(cspPk)) }
+            )
+        }
+
+        composable(Routes.PRE_CALL, arguments = listOf(preCallCspArg)) {
+            PreCallScreen(
                 onBack = { navController.popBackStack() },
                 onCallStarted = { callSessionId -> navController.navigate(Routes.callReview(callSessionId)) }
             )
@@ -160,15 +168,8 @@ fun RcrmNavHost(navController: NavHostController = rememberNavController()) {
             )
         }
 
-        composable(Routes.PENDING_QUEUE) {
-            PendingQueueScreen(
-                onBack = { navController.popBackStack() },
-                onOpenCall = { callSessionId -> navController.navigate(Routes.callReview(callSessionId)) }
-            )
-        }
-
-        composable(Routes.CALL_HISTORY) {
-            CallHistoryScreen(
+        composable(Routes.CALLS) {
+            CallsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenCall = { callSessionId -> navController.navigate(Routes.callReview(callSessionId)) }
             )

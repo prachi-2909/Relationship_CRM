@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +45,41 @@ import com.eko.rcrm.dc.ui.theme.Primary
 import com.eko.rcrm.dc.ui.theme.Saffron
 import com.eko.rcrm.dc.ui.theme.Secondary
 import com.eko.rcrm.dc.ui.theme.Surface
+
+/** A rounded search field with a leading search icon and a clear (x) button — the app's one
+ * search control, used wherever a list needs filtering. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.material3.OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder, color = MutedForeground) },
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        leadingIcon = {
+            Icon(Icons.Default.Search, contentDescription = null, tint = MutedForeground)
+        },
+        trailingIcon = {
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = MutedForeground)
+                }
+            }
+        },
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Primary,
+            unfocusedContainerColor = Surface,
+            focusedContainerColor = Surface
+        )
+    )
+}
 
 @Composable
 fun LoadingIndicator(modifier: Modifier = Modifier) {

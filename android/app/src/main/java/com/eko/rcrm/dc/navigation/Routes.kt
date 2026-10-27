@@ -4,13 +4,18 @@ object Routes {
     const val LOGIN = "login"
     const val HOME = "home"
     const val OFFICIAL_SEARCH = "official_search"
-    const val PENDING_QUEUE = "pending_queue"
-    const val CALL_HISTORY = "call_history"
+    // Pending review and past calls live together on one Calls screen (two tabs).
+    const val CALLS = "calls"
     const val PROFILE = "profile"
     const val MANUAL_DIAL = "manual_dial"
     const val MANUAL_LOG = "manual_log"
     const val RECORDING_CAPABILITY = "recording_capability"
     const val MY_CSPS = "my_csps"
+
+    // "Before you call": the pre-call briefing for one CSP (arg = the CSP's primary key).
+    const val PRE_CALL_ARG = "cspPk"
+    const val PRE_CALL = "pre_call/{$PRE_CALL_ARG}"
+    fun preCall(cspPk: Int) = "pre_call/$cspPk"
 
     // unitId absent (default -1) means "all officials in my territory".
     const val OFFICIAL_LIST_UNIT_ID_ARG = "unitId"
