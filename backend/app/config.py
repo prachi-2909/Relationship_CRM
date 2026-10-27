@@ -147,6 +147,26 @@ class Settings(BaseSettings):
     # that is not configurable. A call that is never logged keeps its audio at most this
     # many days, after which the nightly job deletes it anyway.
     unconfirmed_call_audio_retention_days: int = 7
+    # RM <-> CSP call RECORDINGS (the audio only) are deleted this many days after they were stored.
+    # Transcripts and AI briefs are NOT touched by this - see docs/data-retention.md.
+    rm_recording_retention_days: int = 60
+    # Failed file deletions are queued and retried with backoff; after this many failed attempts the
+    # deletion is marked "abandoned" and audited so an operator can step in.
+    media_delete_max_attempts: int = 8
+    # Orphan-file sweep: a file under the media dir that no database row references is removed, but only
+    # once it is older than this (so an upload still being committed is never mistaken for an orphan),
+    # and never more than this many in one run (a safety stop against a misconfigured DB pointing at an
+    # emptier database wiping the media directory).
+    media_orphan_grace_hours: int = 24
+    media_orphan_max_per_run: int = 50
+    # Commitment lifecycle (separate from audio): an AI proposal nobody reviewed expires after N days;
+    # a closed (done/cancelled/expired) commitment is deleted N days after it was closed. OPEN
+    # commitments never expire - an open promise stays visible until a human closes it.
+    commitment_proposal_expiry_days: int = 30
+    commitment_closed_retention_days: int = 730
+    # Relationship memory for a CSP is derived from its call briefs; only briefs from the last N days
+    # feed it, so stale facts age out of pre-call intelligence.
+    memory_lookback_days: int = 365
     call_pending_reminder_hours: int = 4
     # Daily CSP sync from the live "Calling Sheet" Google Sheet (public CSV export). Keeps each
     # CSP's name, number, alternate number and assigned RM current, and deactivates CSPs that are

@@ -127,6 +127,12 @@ in the Relationship Brief.
 | `ENABLE_BACKUPS` | true | kill switch for the nightly automated backup |
 | `BACKUP_DIR` | `backups` | backup folder, relative to the database file's directory |
 | `BACKUP_RETENTION_COUNT` | 7 | how many nightly snapshots to keep |
+| `RM_RECORDING_RETENTION_DAYS` | 60 | RM-CSP call audio is deleted this many days after it was stored (audio only; transcripts are not purged) - see `docs/data-retention.md` |
+| `MEDIA_DELETE_MAX_ATTEMPTS` | 8 | failed file deletions are retried with backoff, then marked abandoned and audited |
+| `MEDIA_ORPHAN_GRACE_HOURS` / `MEDIA_ORPHAN_MAX_PER_RUN` | 24 / 50 | orphan-file sweep: minimum file age, and the per-run safety cap that aborts the sweep |
+| `COMMITMENT_PROPOSAL_EXPIRY_DAYS` | 30 | an unreviewed AI-proposed commitment expires after this many days |
+| `COMMITMENT_CLOSED_RETENTION_DAYS` | 730 | a done/cancelled commitment is deleted this many days after it was closed (open ones never expire) |
+| `MEMORY_LOOKBACK_DAYS` | 365 | only call briefs this recent feed a CSP's relationship memory |
 | `ENABLE_RAG` | true | kill switch for RAG retrieval in `/ask` and the Brief narrative |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | (unset) → falls back to `LLM_BASE_URL`, then the offline stub | OpenAI-compatible `/embeddings` endpoint |
 | `EMBEDDING_DIM` | 256 | dimension of the offline stub's hashed vectors only |

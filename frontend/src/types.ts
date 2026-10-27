@@ -995,6 +995,48 @@ export interface CspProfileResponse {
   calls_total: number;
 }
 
+export type CommitmentParty = "ours" | "theirs" | "mutual";
+export type CommitmentStatus = "proposed" | "open" | "done" | "cancelled";
+
+export interface Commitment {
+  id: number;
+  text: string;
+  party: CommitmentParty;
+  due_date: string | null;
+  status: CommitmentStatus;
+  source: string;
+  created_at: string | null;
+}
+
+export interface PreCallResponse {
+  csp_id: string;
+  name: string;
+  category: string | null;
+  branch: string | null;
+  rm_name: string;
+  mobile: string | null;
+  alternate_mobile: string | null;
+  calls_count: number;
+  last_call: {
+    call_id: number;
+    when: string;
+    direction: string;
+    summary: string;
+    highlights: string[];
+  } | null;
+  open_commitments: {
+    ours: Commitment[];
+    theirs: Commitment[];
+    mutual: Commitment[];
+    total: number;
+  };
+  /** AI suggestions from call briefs, awaiting the RM's accept / dismiss. Not obligations yet. */
+  proposed_commitments: Commitment[];
+  slab_status: string[];
+  memory: { fact: string; kind: string; from: string }[];
+  talking_points: string[];
+}
+
 export interface BirthdayWishDraft {
   id: number;
   csp_id: string;
@@ -1015,6 +1057,21 @@ export interface BirthdayWishesPreview {
   wishes_enabled: boolean;
   today: BirthdayWishDraft[];
   upcoming: BirthdayWishDraft[];
+}
+
+export interface BirthdaySentItem {
+  csp_id: string;
+  name: string;
+  email: string | null;
+  rm_name: string;
+  sent_on: string;
+  subject: string;
+  message: string;
+}
+
+export interface BirthdaySentResponse {
+  items: BirthdaySentItem[];
+  total: number;
 }
 
 export interface NameValue {

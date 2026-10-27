@@ -6,7 +6,12 @@ import { Badge } from "../components/Badge";
 import { CakeIcon, MailIcon } from "../components/sectionUi";
 import { Card, PageHeader, Spinner } from "../components/ui";
 import { api, ApiError } from "../lib/api";
-import type { BirthdayWishDraft, BirthdayWishesPreview } from "../types";
+import type {
+  BirthdaySentItem,
+  BirthdaySentResponse,
+  BirthdayWishDraft,
+  BirthdayWishesPreview,
+} from "../types";
 
 /** Birthday Wishes — see the exact personalised, bilingual (Hindi + English) message that would be
  * sent to each CSP, today and over the coming week. Read-only preview: nothing is ever sent from
@@ -18,6 +23,10 @@ export function BirthdayWishesPage() {
   const { data, isPending, error } = useQuery({
     queryKey: ["birthday-wishes", "preview"],
     queryFn: () => api<BirthdayWishesPreview>("/csps/birthday-wishes/preview"),
+  });
+  const sentQuery = useQuery({
+    queryKey: ["birthday-wishes", "sent"],
+    queryFn: () => api<BirthdaySentResponse>("/csps/birthday-wishes/sent"),
   });
 
   return (
@@ -66,10 +75,83 @@ export function BirthdayWishesPage() {
               ))
             )}
           </Section>
+
+          <Section
+            title="Recently sent"
+            hint={sentQuery.data ? `${sentQuery.data.total} sent` : ""}
+          >
+            {sentQuery.isPending && <Spinner />}
+            {sentQuery.data && sentQuery.data.items.length === 0 && (
+              <Card className="p-6 text-center text-sm text-muted-foreground">
+                No birthday wishes have been sent yet.
+              </Card>
+            )}
+            {sentQuery.data?.items.map((s) => (
+              <SentCard key={`${s.csp_id}-${s.sent_on}`} item={s} />
+            ))}
+          </Section>
         </>
       )}
     </div>
   );
+}
+
+function SentCard({ item }: { item: BirthdaySentItem }) {
+  const [open, setOpen] = useState(false);
+  const [hi, en] = splitBilingual(item.message);
+  return (
+    <Card className="overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 p-3.5 text-left"
+      >
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[hsl(155_45%_40%)]/10 text-[hsl(155_45%_28%)]">
+          <CheckIcon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium text-foreground">{item.name}</span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+            <span>Sent {sentDate(item.sent_on)}</span>
+            <span>RM {item.rm_name}</span>
+            {item.email && (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <MailIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{item.email}</span>
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{open ? "Hide" : "View"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border bg-muted/30 p-3.5">
+          <div className="mb-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Subject:</span> {item.subject}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border bg-card p-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                हिंदी
+              </div>
+              <p className="whitespace-pre-wrap text-sm text-foreground">{hi}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                English
+              </div>
+              <p className="whitespace-pre-wrap text-sm text-foreground">{en}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function sentDate(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 function StatusBanner({ data }: { data: BirthdayWishesPreview }) {

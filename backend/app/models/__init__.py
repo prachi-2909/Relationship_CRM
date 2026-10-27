@@ -23,6 +23,13 @@ from .call_intelligence import (
     CallVoiceNote,
     IdentityStatus,
 )
+from .media_deletion import MediaDeletion
+from .commitment import (
+    Commitment,
+    CommitmentParty,
+    CommitmentSourceKind,
+    CommitmentStatus,
+)
 from .connection import Connection, ConnectionStatus, ConnectionType
 from .conversation import AskConversation, AskMessage, MessageRole
 from .csp import Csp, CspStatus
@@ -123,6 +130,11 @@ __all__ = [
     "ConnectionStatus",
     "Csp",
     "CspStatus",
+    "MediaDeletion",
+    "Commitment",
+    "CommitmentParty",
+    "CommitmentStatus",
+    "CommitmentSourceKind",
     "AskConversation",
     "AskMessage",
     "MessageRole",

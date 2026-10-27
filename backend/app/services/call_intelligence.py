@@ -185,6 +185,8 @@ def _attach_transcript_and_brief(db: Session, call: CallSession, *, source_type:
     ))
     brief = generate_brief(db, call, result.text)
     db.add(CallAIAnalysis(call_session_id=call.id, model_version=settings.llm_model, analysis_json=brief))
+    from . import commitments as commitments_svc
+    commitments_svc.propose_for_new_brief(db, call)
     return True
 
 
@@ -340,6 +342,8 @@ def set_manual_text(db: Session, call: CallSession, text: str, actor: User) -> C
     db.add(CallAIAnalysis(call_session_id=call.id, model_version=settings.llm_model, analysis_json=brief))
     call.processing_status = CallSessionStatus.REVIEW_REQUIRED
     db.flush()
+    from . import commitments as commitments_svc
+    commitments_svc.propose_for_new_brief(db, call)
     return call
 
 
@@ -829,6 +833,14 @@ def confirm_and_log(
         entity_type="call_session", entity_id=call.id,
         actor_id=actor.id, after={"interaction_id": interaction.id},
     )
+    # Pull trackable commitments from the approved brief BEFORE any discard - for a DC call the
+    # brief/audio is about to be minimised away, but the commitment text is a durable CRM record.
+    from ..models.commitment import CommitmentStatus
+    from . import commitments as commitments_svc
+    commitments_svc.extract_from_call(
+        db, call, brief=edited_brief, status=CommitmentStatus.OPEN
+    )
+
     # DC calls are discarded after logging (DPDP data-minimisation); RM calls are KEPT - the
     # recording + transcription stay in the CRM for the configured retention period.
     if not rm_retains_recording(call):
@@ -888,7 +900,8 @@ def purge_stale_call_audio(db: Session, now: datetime | None = None) -> int:
         call = db.get(CallSession, call_id)
         if call is None:
             continue
-        # RM recordings are retained (not auto-purged) - they follow their own retention policy.
+        # RM audio is NOT handled here: it follows rm_recording_retention_days via
+        # services/retention.purge_expired_rm_audio (audio only; transcripts are never purged).
         if rm_retains_recording(call):
             continue
         if _discard_call_artifacts(

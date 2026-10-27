@@ -3,19 +3,25 @@
 Powers the CRM Organisation section's "CSP Network" view (RM-wise) and the RM's own
 CSP calling list in the mobile app."""
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
 from ...db import get_db
 from ...models.call_intelligence import CallSession
+from ...models.commitment import Commitment, CommitmentParty, CommitmentStatus
 from ...models.csp import Csp, CspStatus
 from ...models.user import Role, User
 from ...schemas.call_intelligence import CallSessionDetail
 from ...schemas.csp import CspByRmResponse, CspOut, CspProfileResponse, CspRmGroup
 from ...security.deps import get_current_user, require_roles
+from ...services import commitments as commitments_svc
 from ...services import csp_sync
+from ...services import precall
 
 settings = get_settings()
 
@@ -58,6 +64,98 @@ def my_csps(db: Session = Depends(get_db), actor: User = Depends(_VIEWERS)):
         .order_by(Csp.name)
     ).all()
     return [CspOut.model_validate(c) for c in rows]
+
+
+def _scoped_csp(db: Session, csp_pk: int, actor: User) -> Csp:
+    """Fetch an active CSP, enforcing that an RM may only reach their own CSPs."""
+    csp = db.get(Csp, csp_pk)
+    if csp is None or csp.status != CspStatus.ACTIVE:
+        raise HTTPException(status_code=404, detail="CSP not found")
+    if actor.role == Role.RELATIONSHIP_MANAGER and csp.rm_user_id != actor.id:
+        raise HTTPException(status_code=404, detail="CSP not found")
+    return csp
+
+
+class CommitmentCreate(BaseModel):
+    text: str
+    party: str = "ours"      # ours | theirs | mutual
+    due_date: date | None = None
+
+
+class CommitmentStatusUpdate(BaseModel):
+    status: str              # open | done | cancelled
+
+
+@router.get("/{csp_pk}/pre-call")
+def csp_pre_call(csp_pk: int, db: Session = Depends(get_db), actor: User = Depends(_VIEWERS)):
+    """Pre-Call Intelligence for one CSP: open commitments, relationship memory (built from retained
+    briefs), the last conversation, current slab status and suggested talking points - everything the
+    RM should see before dialling. RM sees only their own CSPs."""
+    csp = _scoped_csp(db, csp_pk, actor)
+    return precall.build_for_csp(db, csp)
+
+
+@router.get("/{csp_pk}/commitments")
+def csp_commitments(
+    csp_pk: int, include_closed: bool = False,
+    db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """Tracked commitments for a CSP (open by default), freshly synced from the call briefs."""
+    csp = _scoped_csp(db, csp_pk, actor)
+    items = commitments_svc.list_for_csp(db, csp.id, include_closed=include_closed)
+    proposed = commitments_svc.list_for_csp(db, csp.id, proposed_only=True)
+    return {
+        "items": [precall._commitment_dict(c) for c in items], "total": len(items),
+        "proposed": [precall._commitment_dict(c) for c in proposed],
+    }
+
+
+@router.post("/{csp_pk}/commitments")
+def add_csp_commitment(
+    csp_pk: int, payload: CommitmentCreate,
+    db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """Add a commitment manually (e.g. agreed on a call that had no recording)."""
+    if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
+        raise HTTPException(status_code=403, detail="Not allowed to add commitments")
+    csp = _scoped_csp(db, csp_pk, actor)
+    try:
+        party = CommitmentParty(payload.party)
+    except ValueError:
+        party = CommitmentParty.OURS
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Commitment text is required")
+    c = commitments_svc.add_manual(
+        db, csp=csp, text=text, party=party, due_date=payload.due_date, actor=actor
+    )
+    return precall._commitment_dict(c)
+
+
+@router.post("/commitments/{commitment_id}/status")
+def update_commitment_status(
+    commitment_id: int, payload: CommitmentStatusUpdate,
+    db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """Mark a commitment done / cancelled / reopened. RM may only touch their own CSP's commitments."""
+    if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
+        raise HTTPException(status_code=403, detail="Not allowed to update commitments")
+    c = db.get(Commitment, commitment_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Commitment not found")
+    if c.csp_id is not None and actor.role == Role.RELATIONSHIP_MANAGER:
+        _scoped_csp(db, c.csp_id, actor)  # raises 404 if not the RM's CSP
+    try:
+        status = CommitmentStatus(payload.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if status == CommitmentStatus.PROPOSED:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    try:
+        commitments_svc.set_status(db, c, status, actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return precall._commitment_dict(c)
 
 
 @router.get("/{csp_pk}/profile", response_model=CspProfileResponse)
@@ -147,6 +245,36 @@ def birthday_wishes_preview(db: Session = Depends(get_db), actor: User = Depends
         "today": [draft_for(c, 0) for c in todays],
         "upcoming": [draft_for(c, d) for c, d in upcoming],
     }
+
+
+@router.get("/birthday-wishes/sent")
+def birthday_wishes_sent(
+    limit: int = 50, db: Session = Depends(get_db), actor: User = Depends(_VIEWERS)
+):
+    """Log of birthday wishes already sent - who got one, on which date and email, and the exact
+    message - so the team can see what went out. Newest first. An RM sees only their own CSPs."""
+    from ...services import birthdays
+
+    is_rm = actor.role == Role.RELATIONSHIP_MANAGER
+    rows = db.scalars(
+        select(Csp)
+        .where(Csp.status == CspStatus.ACTIVE)
+        .where(Csp.last_birthday_wish_on.is_not(None))
+        .order_by(Csp.last_birthday_wish_on.desc(), Csp.name)
+    ).all()
+    items = []
+    for c in rows:
+        if is_rm and c.rm_user_id != actor.id:
+            continue
+        draft = birthdays.personalize(db, c)
+        items.append({
+            "csp_id": c.csp_id, "name": c.name, "email": c.email, "rm_name": c.rm_name,
+            "sent_on": c.last_birthday_wish_on.isoformat(),
+            "subject": draft["subject"], "message": draft["message"],
+        })
+        if len(items) >= limit:
+            break
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/{csp_pk}/birthday-wish")

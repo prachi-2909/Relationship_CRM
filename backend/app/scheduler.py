@@ -16,7 +16,17 @@ from .config import get_settings
 from .db import SessionLocal
 from .models.relationship import Relationship
 from .models.task import Task, TaskStatus
-from .services import agent, audit, backup, call_intelligence, moments, outcomes, scoring, strategic_insight
+from .services import (
+    agent,
+    audit,
+    backup,
+    call_intelligence,
+    moments,
+    outcomes,
+    retention,
+    scoring,
+    strategic_insight,
+)
 from .services.importance import recompute as recompute_importance
 
 logger = logging.getLogger("rcrm.scheduler")
@@ -72,11 +82,14 @@ def _nightly_job() -> None:
         n_resolved = outcomes.reconcile_pending(db)
         n_audio_purged = call_intelligence.purge_stale_call_audio(db)
         db.commit()
+        # RM audio (60d), failed-delete retries, orphan files, commitment lifecycle - each step
+        # commits or rolls back on its own so one failure cannot block the rest.
+        retention_summary = retention.run_nightly(db)
         backup_path = backup.create_backup() if settings.enable_backups else None
         logger.info(
             "nightly: rescored %s relationships, escalated %s tasks, detected %s moments, "
             "agent created %s recommendation(s) (%s expired), %s strategic insight(s), "
-            "%s outcome(s) resolved, %s unlogged call(s)' audio expired, backup %s",
+            "%s outcome(s) resolved, %s unlogged call(s)' audio expired, retention %s, backup %s",
             n_scores,
             n_overdue,
             n_moments,
@@ -85,6 +98,7 @@ def _nightly_job() -> None:
             n_insights,
             n_resolved,
             n_audio_purged,
+            retention_summary,
             backup_path or "skipped",
         )
     except Exception:  # pragma: no cover - defensive
