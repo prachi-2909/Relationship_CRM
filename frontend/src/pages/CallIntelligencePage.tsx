@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { Card, EmptyState, PageHeader, Spinner } from "../components/ui";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, API_BASE } from "../lib/api";
 import {
   CALL_IDENTITY_STATUS_TONE,
   CALL_IDENTITY_STATUS_LABEL,
@@ -394,7 +394,7 @@ function CallReviewPanel({ call, onChanged }: { call: CallSessionDetail; onChang
             controls
             preload="none"
             className="w-full"
-            src={`/api/v1/calls/${call.id}/voice-note/audio`}
+            src={`${API_BASE}/calls/${call.id}/voice-note/audio`}
           >
             Your browser can’t play this recording.
           </audio>

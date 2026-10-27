@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
 import { Button, inputClass } from "../components/ui";
-import { ApiError } from "../lib/api";
+import { ApiError, ASSET_BASE } from "../lib/api";
 
 export function LoginPage() {
   const { user, isLoading, login } = useAuth();
@@ -35,7 +35,7 @@ export function LoginPage() {
     <div className="flex h-full items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3">
-          <img src="/eko-logo.png" alt="Eko Kiosk" className="h-12 w-auto" />
+          <img src={`${ASSET_BASE}eko-logo.png`} alt="Eko Kiosk" className="h-12 w-auto" />
           <div className="text-center">
             <div className="font-heading text-lg font-bold text-foreground">
               Relationship CRM

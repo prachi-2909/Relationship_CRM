@@ -1,5 +1,7 @@
-# Local/production-shaped stack: nginx (frontend, port 80) -> FastAPI
-# (backend, port 8010) -> SQLite on a named volume. Copy .env.example to
+# Production-shaped stack: nginx (frontend) -> FastAPI (backend) -> SQLite on a named volume.
+# Only the frontend is published, and only on 127.0.0.1:CRM_HOST_PORT: on a shared server a host
+# reverse proxy (Nginx) routes https://<domain>/<PUBLIC_BASE_PATH>/ to it, so no application port
+# is ever exposed to the network. The backend has no host port; the frontend proxies /api to it. Copy .env.example to
 # .env at the repo root to override SECRET_KEY / LLM_* before deploying
 # anywhere real; sane defaults let `docker compose up` work out of the box
 # for a local look.
@@ -14,6 +16,8 @@
 # proxy in front (this compose file does not provide one); only set
 # SESSION_COOKIE_SECURE=false for a deployment you specifically intend to
 # stay on an isolated, trusted network with no TLS.
+name: sbi-relationship-crm
+
 services:
   backend:
     build: ./backend
@@ -22,6 +26,8 @@ services:
       DATABASE_URL: sqlite+pysqlite:////app/data/relationship_crm.db
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost"]}'
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      # Scope the session cookie to the public sub-path so it is not sent to other apps on the domain.
+      SESSION_COOKIE_PATH: ${PUBLIC_BASE_PATH:-/}
       SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-stub}
@@ -31,12 +37,15 @@ services:
       # Transcription runs on THIS server only (the `transcription` service below), reached over the
       # internal compose network - call audio never leaves the host. Override the URL only to point
       # at another in-house host; never a third party for production (DPDP).
+      # "openai" = call the OpenAI-compatible service above (the default "local_whisper" would run
+      # faster-whisper inside this image, which does not ship it).
+      TRANSCRIPTION_PROVIDER: openai
       TRANSCRIPTION_BASE_URL: ${TRANSCRIPTION_BASE_URL:-http://transcription:8000/v1}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
+      # CPU Whisper runs about real-time, so allow minutes (not the 60 s default) for a long call.
+      TRANSCRIPTION_TIMEOUT_SECONDS: ${TRANSCRIPTION_TIMEOUT_SECONDS:-900}
     volumes:
       - crm-data:/app/data
-    ports:
-      - "8010:8010"
     restart: unless-stopped
 
   # Self-hosted speech-to-text (OpenAI-compatible /v1/audio/transcriptions). On-server only: it is
@@ -54,9 +63,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_BASE_PATH: ${PUBLIC_BASE_PATH:-/}
     ports:
-      - "80:80"
+      # Localhost only; pick a free port on the server (sudo ss -lntp) and set CRM_HOST_PORT in .env.
+      - "127.0.0.1:${CRM_HOST_PORT:?set CRM_HOST_PORT in .env to a free host port}:80"
     depends_on:
       backend:
         condition: service_healthy

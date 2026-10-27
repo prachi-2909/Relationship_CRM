@@ -74,6 +74,45 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 - Same migration/schema-change discipline as above — migrations run
   automatically on container start, so ship the migration file with the image.
 
+## Shared server, behind Nginx under a sub-path
+
+This is how the stack is deployed on the shared R730: the public link is
+`https://indev.eko.in/sbi-relationship-crm/` (no IP, no application port). Public traffic enters the host
+Nginx on 80/443, which routes the sub-path to the frontend container on `127.0.0.1:<CRM_HOST_PORT>`. Nothing
+else is published (the backend has no host port; the frontend proxies `/api` to it over the compose network).
+
+1. **Pick a free port (read-only).** `sudo ss -lntp` and `docker ps`; choose one that is unused, never an
+   infrastructure port. Do not touch other apps.
+2. **`.env`** at the repo root (`cp .env.example .env`, `chmod 600 .env`):
+   `CRM_HOST_PORT=<free port>`, `PUBLIC_BASE_PATH=/sbi-relationship-crm/` (must start and end with `/`),
+   and the usual `SECRET_KEY`, `LLM_*`. The session cookie is scoped to `PUBLIC_BASE_PATH` and stays `Secure`.
+3. **Start:** `sudo docker compose up -d --build` (the compose project is named `sbi-relationship-crm`; never
+   run `docker system prune` or `down` on another project). Check `curl -i http://127.0.0.1:<port>/` and
+   `curl -i http://127.0.0.1:<port>/api/v1/health`.
+4. **Nginx (needs the server admin's approval).** Back up the config outside `sites-enabled`, add the block
+   to the `indev.eko.in` server, then `sudo nginx -t` and only if it passes `sudo systemctl reload nginx`:
+
+   ```nginx
+   location /sbi-relationship-crm/ {
+       proxy_pass http://127.0.0.1:<CRM_HOST_PORT>/;   # the trailing slash strips the prefix
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       client_max_body_size 25m;                         # call-audio uploads (the API caps a file at 20 MB)
+   }
+   ```
+5. **Verify the exact link** `https://indev.eko.in/sbi-relationship-crm/`: login page loads, assets 200, login
+   persists, and a call recording uploads. Then confirm the other apps on the server are still healthy.
+6. **Rollback:** restore the Nginx backup and reload; `docker compose down` in this project only (never `-v`
+   unless a backup is confirmed - it holds the database volume).
+7. **Android:** build the release app against the same link:
+   `./gradlew assembleRelease -PrcrmApiBaseUrl=https://indev.eko.in/sbi-relationship-crm/api/v1/`.
+
+Transcription runs in the `transcription` container (CPU Speaches image; `TRANSCRIPTION_PROVIDER=openai` is set
+in compose). Allow minutes for a long call: `TRANSCRIPTION_TIMEOUT_SECONDS` defaults to 900 in compose.
+
 ## Migrations
 
 ```bash

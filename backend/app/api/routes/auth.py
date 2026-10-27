@@ -26,7 +26,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
         secure=settings.session_cookie_secure,
         samesite=settings.session_cookie_samesite,
         max_age=settings.session_ttl_hours * 3600,
-        path="/",
+        path=settings.session_cookie_path,
     )
 
 
@@ -107,7 +107,7 @@ def logout(
         db, action="auth.logout", entity_type="user", entity_id=user.id, actor_id=user.id
     )
     db.commit()
-    response.delete_cookie(settings.session_cookie_name, path="/")
+    response.delete_cookie(settings.session_cookie_name, path=settings.session_cookie_path)
 
 
 @router.get("/me", response_model=UserOut)

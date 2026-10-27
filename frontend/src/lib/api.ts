@@ -1,4 +1,7 @@
-const BASE = "/api/v1";
+// BASE_URL is the Vite `base` (always ends in "/"), so the app also works under a sub-path.
+export const API_BASE = `${import.meta.env.BASE_URL}api/v1`;
+export const ASSET_BASE = import.meta.env.BASE_URL;
+const BASE = API_BASE;
 
 export class ApiError extends Error {
   constructor(

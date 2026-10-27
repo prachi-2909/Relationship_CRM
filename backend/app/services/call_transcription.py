@@ -248,7 +248,7 @@ def transcribe(audio_ref: str) -> TranscriptResult | None:
             form["language"] = settings.transcription_language
         if settings.transcription_prompt:
             form["prompt"] = settings.transcription_prompt
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=settings.transcription_timeout_seconds) as client:
             resp = client.post(
                 settings.transcription_base_url.rstrip("/") + "/audio/transcriptions",
                 headers=headers,

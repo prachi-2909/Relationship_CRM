@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
+import { ASSET_BASE } from "../lib/api";
 import { ROLE_LABELS } from "../types";
 import { Button } from "./ui";
 
@@ -76,7 +77,7 @@ export function AppShell() {
   const sidebar = (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
-        <img src="/eko-logo.png" alt="Eko Kiosk" className="h-7 w-auto" />
+        <img src={`${ASSET_BASE}eko-logo.png`} alt="Eko Kiosk" className="h-7 w-auto" />
         <div className="leading-tight">
           <div className="font-heading text-[13px] font-bold text-secondary">
             Relationship CRM

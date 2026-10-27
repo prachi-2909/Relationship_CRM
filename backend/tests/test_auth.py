@@ -92,3 +92,19 @@ def test_password_reset_revokes_existing_sessions(client, make_user, login):
     client.cookies.clear()
     # The victim's old session must stop working the moment their password is reset.
     assert client.get("/api/v1/auth/me", headers=victim_auth).status_code == 401
+
+
+def test_session_cookie_is_scoped_to_the_configured_public_path(client, make_user, monkeypatch):
+    """Behind a shared domain the cookie must only go to this app's sub-path, and logout must clear
+    that same path (a cookie is only removed by a Set-Cookie with a matching Path)."""
+    from app.api.routes import auth as auth_routes
+
+    monkeypatch.setattr(auth_routes.settings, "session_cookie_path", "/sbi-relationship-crm/")
+    make_user(email="cookie-path@example.com", password="password123")
+    login = client.post("/api/v1/auth/login", json={"email": "cookie-path@example.com", "password": "password123"})
+    assert login.status_code == 200
+    assert "path=/sbi-relationship-crm/" in login.headers["set-cookie"].lower()
+
+    # The test client sits at /api/..., outside that path, so it would not send the cookie: use the token.
+    out = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {login.json()['token']}"})
+    assert "path=/sbi-relationship-crm/" in out.headers["set-cookie"].lower()

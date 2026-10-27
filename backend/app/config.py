@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 8
     session_cookie_secure: bool = False
     session_cookie_samesite: str = "lax"
+    # Narrow this to the public sub-path (e.g. /sbi-relationship-crm/) when the app shares a domain with others.
+    session_cookie_path: str = "/"
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
@@ -133,6 +135,8 @@ class Settings(BaseSettings):
     transcription_denoise_enabled: bool = True
     transcription_base_url: str | None = None
     transcription_api_key: str | None = None
+    # Seconds to wait for a remote transcription. CPU Whisper runs about real-time, so long calls need minutes.
+    transcription_timeout_seconds: float = 60.0
     transcription_model: str = "whisper-large-v3-turbo"
     # Hinglish: DC calls are Hindi/English code-mixed. Setting the language to Hindi captures that
     # far better than auto-detect, and seeding a romanized (Hinglish) prompt biases Whisper to write

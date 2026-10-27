@@ -15,7 +15,7 @@ import {
 import { CakeIcon, MailIcon, PhoneIcon } from "../components/sectionUi";
 import { Card, Spinner } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, API_BASE } from "../lib/api";
 import {
   CALL_PROCESSING_STATUS_TONE,
   type CallSessionDetail,
@@ -360,7 +360,7 @@ function CallRow({ call }: { call: CallSessionDetail }) {
           controls
           preload="none"
           className="mt-2.5 h-9 w-full"
-          src={`/api/v1/calls/${call.id}/voice-note/audio`}
+          src={`${API_BASE}/calls/${call.id}/voice-note/audio`}
         >
           Your browser can’t play this recording.
         </audio>
