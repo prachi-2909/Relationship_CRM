@@ -44,7 +44,7 @@ services:
   # Default is the CPU image with a small model so it runs on any server; for production Indian-
   # language accuracy use the CUDA image and a larger model - see deploy/self-hosted-ai/README.md.
   transcription:
-    image: ${TRANSCRIPTION_IMAGE:-ghcr.io/speaches-ai/speaches:latest}
+    image: ${TRANSCRIPTION_IMAGE:-ghcr.io/speaches-ai/speaches:latest-cpu}
     environment:
       WHISPER__MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
     volumes:

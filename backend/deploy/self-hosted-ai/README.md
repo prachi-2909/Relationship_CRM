@@ -44,7 +44,7 @@ Keep `<ai-host>` on a private network with the backend; don't expose 8001/8002 p
 - **One big / multi-GPU (40–80 GB+):** drop `--quantization awq`, raise `--max-model-len`, or move
   to Sarvam 30B/105B; add `--tensor-parallel-size N` across cards.
 - **CPU only (start compliant now, no GPU yet):** set the transcription image to the non-CUDA
-  `ghcr.io/speaches-ai/speaches:latest` with a smaller Whisper model, and either run a small LLM
+  `ghcr.io/speaches-ai/speaches:latest-cpu` with a smaller Whisper model, and either run a small LLM
   (e.g. Qwen/Llama 7–8B) on CPU — slow — or set `AI_DATA_PROCESSING_ENABLED=false` so the app runs
   fully offline (manual-text recap instead of AI briefs) until a GPU is available.
 
