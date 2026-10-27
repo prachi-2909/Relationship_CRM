@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.eko.rcrm.dc.data.repository.CallRepository
 import com.eko.rcrm.dc.data.repository.CspRepository
 import com.eko.rcrm.dc.domain.model.PreCall
+import com.eko.rcrm.dc.domain.model.Suggestion
 import com.eko.rcrm.dc.nativecall.NativeCallRequest
 import com.eko.rcrm.dc.navigation.Routes
 import com.eko.rcrm.dc.util.Result
@@ -68,12 +69,22 @@ class PreCallViewModel @Inject constructor(
         }
     }
 
-    /** status: "open" = accept an AI suggestion, "cancelled" = dismiss it, "done" = completed. */
-    fun setStatus(commitmentId: Int, status: String) {
+    /** status: "open" = accept an AI suggestion, "cancelled" = dismiss it / close as not done, "done" =
+     * completed; outcome is "fulfilled" / "not_fulfilled" when a live commitment is closed. */
+    fun setStatus(commitmentId: Int, status: String, outcome: String? = null) =
+        act { cspRepository.setCommitmentStatus(commitmentId, status, outcome) }
+
+    /** decision: "merge" (same commitment) or "separate" (keep both). */
+    fun reviewDuplicate(commitmentId: Int, decision: String) =
+        act { cspRepository.reviewDuplicate(commitmentId, decision) }
+
+    fun rate(s: Suggestion, verdict: String) = act { cspRepository.sendFeedback(cspPk, s.key, verdict) }
+
+    private fun <T> act(block: suspend () -> Result<T>) {
         if (_uiState.value.busy) return
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, actionError = null) }
-            when (val result = cspRepository.setCommitmentStatus(commitmentId, status)) {
+            when (val result = block()) {
                 is Result.Success -> {
                     _uiState.update { it.copy(busy = false) }
                     refresh()

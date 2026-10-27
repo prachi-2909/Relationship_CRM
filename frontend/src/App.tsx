@@ -9,6 +9,7 @@ import { CallIntelligencePage } from "./pages/CallIntelligencePage";
 import { CspProfilePage } from "./pages/CspProfilePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
+import { IntelligenceQualityPage } from "./pages/IntelligenceQualityPage";
 import { InteractionsPage } from "./pages/InteractionsPage";
 import { LearningPage } from "./pages/LearningPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="moments" element={<MomentsPage />} />
           <Route path="agent" element={<AgentPage />} />
           <Route path="learning" element={<LearningPage />} />
+          <Route path="intelligence-quality" element={<IntelligenceQualityPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="audit" element={<AuditLogPage />} />
           <Route

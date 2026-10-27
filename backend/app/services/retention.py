@@ -34,6 +34,7 @@ from ..models.call_intelligence import (
 from ..models.media_deletion import STATUS_DONE, STATUS_PENDING, MediaDeletion
 from . import audit
 from . import commitments as commitments_svc
+from . import intelligence_feedback as feedback_svc
 from . import media_storage
 from .call_intelligence import rm_retains_recording
 
@@ -225,5 +226,6 @@ def run_nightly(db: Session, now: datetime | None = None) -> dict:
     step("media_deletions", lambda: retry_pending_media_deletions(db, now))
     step("orphan_files", lambda: sweep_orphan_files(db, now))
     step("commitments", lambda: commitments_svc.apply_lifecycle(db, now))
+    step("feedback", lambda: feedback_svc.purge_old(db, now))
     logger.info("retention: %s", summary)
     return summary

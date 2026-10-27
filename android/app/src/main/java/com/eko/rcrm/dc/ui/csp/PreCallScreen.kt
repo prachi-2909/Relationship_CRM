@@ -1,17 +1,12 @@
 package com.eko.rcrm.dc.ui.csp
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -22,15 +17,12 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,14 +32,22 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.eko.rcrm.dc.domain.model.Commitment
 import com.eko.rcrm.dc.domain.model.PreCall
 import com.eko.rcrm.dc.nativecall.rememberNativeCallLauncher
 import com.eko.rcrm.dc.ui.common.AppCard
 import com.eko.rcrm.dc.ui.common.AppTopBar
+import com.eko.rcrm.dc.ui.common.BriefingActions
+import com.eko.rcrm.dc.ui.common.BulletLine
 import com.eko.rcrm.dc.ui.common.ErrorBanner
 import com.eko.rcrm.dc.ui.common.LoadingIndicator
+import com.eko.rcrm.dc.ui.common.MemoryCard
+import com.eko.rcrm.dc.ui.common.OpenCommitmentRow
+import com.eko.rcrm.dc.ui.common.PerformanceCard
+import com.eko.rcrm.dc.ui.common.SectionCard
 import com.eko.rcrm.dc.ui.common.StatusBadge
+import com.eko.rcrm.dc.ui.common.SuggestedCommitmentRow
+import com.eko.rcrm.dc.ui.common.SuggestionLine
+import com.eko.rcrm.dc.ui.common.SuppressedNote
 import com.eko.rcrm.dc.ui.common.Tone
 import com.eko.rcrm.dc.ui.theme.Background
 import com.eko.rcrm.dc.ui.theme.MutedForeground
@@ -79,6 +79,15 @@ fun PreCallScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val actions = remember(state.busy) {
+        BriefingActions(
+            busy = state.busy,
+            onStatus = viewModel::setStatus,
+            onDuplicate = viewModel::reviewDuplicate,
+            onRate = viewModel::rate
+        )
+    }
+
     Scaffold(
         containerColor = Background,
         topBar = { AppTopBar(title = "Before you call", onBack = onBack) }
@@ -93,10 +102,9 @@ fun PreCallScreen(
                 )
                 else -> PreCallContent(
                     data = data,
-                    busy = state.busy,
+                    actions = actions,
                     actionError = state.actionError,
-                    onCall = viewModel::call,
-                    onStatus = viewModel::setStatus
+                    onCall = viewModel::call
                 )
             }
         }
@@ -106,10 +114,9 @@ fun PreCallScreen(
 @Composable
 private fun PreCallContent(
     data: PreCall,
-    busy: Boolean,
+    actions: BriefingActions,
     actionError: String?,
-    onCall: (String) -> Unit,
-    onStatus: (Int, String) -> Unit
+    onCall: (String) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
@@ -130,10 +137,13 @@ private fun PreCallContent(
             }
         }
 
+        data.performance?.let { item { PerformanceCard(it) } }
+
         if (data.talkingPoints.isNotEmpty()) {
             item {
                 SectionCard(title = "Talking points", accent = Saffron) {
-                    data.talkingPoints.forEach { BulletLine("→", it) }
+                    data.talkingPoints.forEach { SuggestionLine(it, actions) }
+                    SuppressedNote(data.suppressedCount)
                 }
             }
         }
@@ -144,12 +154,7 @@ private fun PreCallContent(
                     title = "Suggested from your calls",
                     subtitle = "Picked out of your call briefs by the AI. Accept what was really agreed; dismiss the rest."
                 ) {
-                    data.suggested.forEach { c ->
-                        CommitmentRow(c) {
-                            TextButton(onClick = { onStatus(c.id, "open") }, enabled = !busy) { Text("Accept") }
-                            TextButton(onClick = { onStatus(c.id, "cancelled") }, enabled = !busy) { Text("Dismiss") }
-                        }
-                    }
+                    data.suggested.forEach { SuggestedCommitmentRow(it, actions, "You", "They") }
                 }
             }
         }
@@ -157,11 +162,7 @@ private fun PreCallContent(
         if (data.youCommitted.isNotEmpty()) {
             item {
                 SectionCard(title = "You committed") {
-                    data.youCommitted.forEach { c ->
-                        CommitmentRow(c) {
-                            TextButton(onClick = { onStatus(c.id, "done") }, enabled = !busy) { Text("Mark done") }
-                        }
-                    }
+                    data.youCommitted.forEach { OpenCommitmentRow(it, actions, "You", "They") }
                 }
             }
         }
@@ -169,11 +170,7 @@ private fun PreCallContent(
         if (data.theyCommitted.isNotEmpty()) {
             item {
                 SectionCard(title = "They committed") {
-                    data.theyCommitted.forEach { c ->
-                        CommitmentRow(c) {
-                            TextButton(onClick = { onStatus(c.id, "done") }, enabled = !busy) { Text("Mark done") }
-                        }
-                    }
+                    data.theyCommitted.forEach { OpenCommitmentRow(it, actions, "You", "They") }
                 }
             }
         }
@@ -251,88 +248,6 @@ private fun DialRow(label: String, number: String, onCall: (String) -> Unit) {
             colors = IconButtonDefaults.filledIconButtonColors(containerColor = Primary, contentColor = Color.White)
         ) {
             Icon(Icons.Default.Call, contentDescription = "Call $number")
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(
-    title: String,
-    subtitle: String? = null,
-    accent: Color? = null,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    AppCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(
-                text = title.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = accent ?: MutedForeground
-            )
-            subtitle?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MutedForeground,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun BulletLine(bullet: String, text: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(text = bullet, style = MaterialTheme.typography.bodyMedium, color = MutedForeground)
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 8.dp)
-        )
-    }
-}
-
-@Composable
-private fun CommitmentRow(c: Commitment, actions: @Composable RowScope.() -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(text = c.text, style = MaterialTheme.typography.bodyMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusBadge(
-                text = when (c.party) {
-                    "ours" -> "You"
-                    "theirs" -> "They"
-                    else -> "Both"
-                },
-                tone = Tone.Neutral
-            )
-            c.dueDate?.let {
-                Text(
-                    text = "  by $it",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MutedForeground
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            actions()
-        }
-    }
-}
-
-@Composable
-private fun MemoryCard(facts: List<String>) {
-    var expanded by remember { mutableStateOf(false) }
-    AppCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp).animateContentSize()) {
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide relationship memory" else "Show relationship memory (${facts.size})")
-            }
-            if (expanded) {
-                facts.forEach { BulletLine("•", it) }
-            }
         }
     }
 }

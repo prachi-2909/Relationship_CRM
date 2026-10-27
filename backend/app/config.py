@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # Relationship memory for a CSP is derived from its call briefs; only briefs from the last N days
     # feed it, so stale facts age out of pre-call intelligence.
     memory_lookback_days: int = 365
+    # Intelligence feedback rows (useful / relevant verdicts) snapshot the suggestion text, which comes
+    # from call briefs, so they are deleted this many days after the verdict was last changed. The
+    # aggregate quality numbers are computed on demand from what remains.
+    intelligence_feedback_retention_days: int = 730
     call_pending_reminder_hours: int = 4
     # Daily CSP sync from the live "Calling Sheet" Google Sheet (public CSV export). Keeps each
     # CSP's name, number, alternate number and assigned RM current, and deactivates CSPs that are

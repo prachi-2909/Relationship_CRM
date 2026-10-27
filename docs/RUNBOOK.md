@@ -132,6 +132,7 @@ in the Relationship Brief.
 | `MEDIA_ORPHAN_GRACE_HOURS` / `MEDIA_ORPHAN_MAX_PER_RUN` | 24 / 50 | orphan-file sweep: minimum file age, and the per-run safety cap that aborts the sweep |
 | `COMMITMENT_PROPOSAL_EXPIRY_DAYS` | 30 | an unreviewed AI-proposed commitment expires after this many days |
 | `COMMITMENT_CLOSED_RETENTION_DAYS` | 730 | a done/cancelled commitment is deleted this many days after it was closed (open ones never expire) |
+| `INTELLIGENCE_FEEDBACK_RETENTION_DAYS` | 730 | a useful / relevant verdict on a suggestion is deleted this many days after it was last changed |
 | `MEMORY_LOOKBACK_DAYS` | 365 | only call briefs this recent feed a CSP's relationship memory |
 | `ENABLE_RAG` | true | kill switch for RAG retrieval in `/ask` and the Brief narrative |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | (unset) → falls back to `LLM_BASE_URL`, then the offline stub | OpenAI-compatible `/embeddings` endpoint |

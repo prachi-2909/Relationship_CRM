@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.CircularProgressIndicator
@@ -18,6 +20,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,18 +28,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.eko.rcrm.dc.domain.model.Official
+import com.eko.rcrm.dc.domain.model.OfficialBriefing
 import com.eko.rcrm.dc.nativecall.rememberNativeCallLauncher
 import com.eko.rcrm.dc.ui.common.AppCard
 import com.eko.rcrm.dc.ui.common.AppTopBar
+import com.eko.rcrm.dc.ui.common.BriefingActions
+import com.eko.rcrm.dc.ui.common.BulletLine
 import com.eko.rcrm.dc.ui.common.CtaButton
 import com.eko.rcrm.dc.ui.common.ErrorBanner
 import com.eko.rcrm.dc.ui.common.LoadingIndicator
+import com.eko.rcrm.dc.ui.common.MemoryCard
+import com.eko.rcrm.dc.ui.common.OpenCommitmentRow
+import com.eko.rcrm.dc.ui.common.SectionCard
+import com.eko.rcrm.dc.ui.common.SuggestedCommitmentRow
+import com.eko.rcrm.dc.ui.common.SuggestionLine
+import com.eko.rcrm.dc.ui.common.SuppressedNote
 import com.eko.rcrm.dc.ui.theme.Background
 import com.eko.rcrm.dc.ui.theme.MutedForeground
 import com.eko.rcrm.dc.ui.theme.Primary
+import com.eko.rcrm.dc.ui.theme.Saffron
 
 @Composable
 fun OfficialDetailScreen(
@@ -59,6 +75,25 @@ fun OfficialDetailScreen(
         viewModel.navigateToReview.collect { callSessionId -> onCallStarted(callSessionId) }
     }
 
+    // Coming back from a call must not leave a stale briefing up.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshBriefing()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val actions = remember(uiState.busy) {
+        BriefingActions(
+            busy = uiState.busy,
+            onStatus = viewModel::setStatus,
+            onDuplicate = viewModel::reviewDuplicate,
+            onRate = viewModel::rate
+        )
+    }
+
     Scaffold(
         containerColor = Background,
         topBar = { AppTopBar(title = "Official", onBack = onBack) }
@@ -74,6 +109,7 @@ fun OfficialDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp)
             ) {
                 DetailCard(official)
@@ -110,6 +146,93 @@ fun OfficialDetailScreen(
                     Spacer(modifier = Modifier.padding(start = 4.dp))
                     Text("Edit official")
                 }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                BriefingSection(
+                    briefing = uiState.briefing,
+                    error = uiState.briefingError,
+                    actions = actions
+                )
+            }
+        }
+    }
+}
+
+/** The DC's relationship briefing: history, memory, who owes what, follow-ups and what to raise next. */
+@Composable
+private fun BriefingSection(briefing: OfficialBriefing?, error: String?, actions: BriefingActions) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when {
+            briefing == null -> Text(
+                text = error ?: "Loading the relationship briefing…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MutedForeground
+            )
+            briefing.isEmpty && briefing.relationshipLine == null -> Text(
+                text = "No interactions or open items with this official yet - the briefing fills in as you " +
+                    "log calls and follow-ups.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MutedForeground
+            )
+            else -> {
+                briefing.relationshipLine?.let {
+                    SectionCard(title = "Relationship") { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                }
+
+                if (briefing.talkingPoints.isNotEmpty()) {
+                    SectionCard(title = "Suggested discussion points", accent = Saffron) {
+                        briefing.talkingPoints.forEach { SuggestionLine(it, actions) }
+                        SuppressedNote(briefing.suppressedCount)
+                    }
+                }
+
+                if (briefing.suggested.isNotEmpty()) {
+                    SectionCard(
+                        title = "Suggested from your calls",
+                        subtitle = "Picked out of your call briefs by the AI. Accept what was really agreed; " +
+                            "dismiss the rest."
+                    ) {
+                        briefing.suggested.forEach { SuggestedCommitmentRow(it, actions, "You", "Official") }
+                    }
+                }
+
+                if (briefing.youCommitted.isNotEmpty()) {
+                    SectionCard(title = "You committed") {
+                        briefing.youCommitted.forEach { OpenCommitmentRow(it, actions, "You", "Official") }
+                    }
+                }
+
+                if (briefing.theyCommitted.isNotEmpty()) {
+                    SectionCard(title = "They committed") {
+                        briefing.theyCommitted.forEach { OpenCommitmentRow(it, actions, "You", "Official") }
+                    }
+                }
+
+                if (briefing.followups.isNotEmpty() || briefing.followupSuggestions.isNotEmpty()) {
+                    SectionCard(title = "Follow-ups") {
+                        briefing.followups.forEach {
+                            BulletLine(
+                                "•",
+                                it.title + (it.dueAt?.let { d -> " (by $d${if (it.overdue) ", overdue" else ""})" } ?: "")
+                            )
+                        }
+                        briefing.followupSuggestions.forEach { SuggestionLine(it, actions) }
+                    }
+                }
+
+                if (briefing.upcoming.isNotEmpty()) {
+                    SectionCard(title = "Coming up") { briefing.upcoming.forEach { BulletLine("•", it) } }
+                }
+
+                if (briefing.interactions.isNotEmpty()) {
+                    SectionCard(title = "Recent interactions") {
+                        briefing.interactions.forEach {
+                            BulletLine("•", "${it.whenIso} · ${it.type.replace('_', ' ')} - ${it.summary}")
+                        }
+                    }
+                }
+
+                if (briefing.memory.isNotEmpty()) MemoryCard(facts = briefing.memory)
             }
         }
     }

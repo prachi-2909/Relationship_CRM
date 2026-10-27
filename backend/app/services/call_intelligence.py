@@ -52,7 +52,41 @@ _EMPTY_BRIEF: dict = {
     "opportunities": [],
     "relationship_signals": [],
     "suggested_next_interaction": "",
+    # RM-CSP calls only: the RM's own review of the CSP - where they stand (what), why, and what it
+    # should be. These are the RM's statements, not claims the CSP made.
+    "performance": {"what": [], "why": [], "should_be": []},
 }
+
+
+def _empty_brief() -> dict:
+    import copy
+
+    return copy.deepcopy(_EMPTY_BRIEF)
+
+
+def _clean_performance(value: object) -> dict:
+    """Whatever the model returned for "performance", coerced to {what, why, should_be: [short str]}."""
+    out: dict = {"what": [], "why": [], "should_be": []}
+    if not isinstance(value, dict):
+        return out
+    for key in out:
+        raw = value.get(key)
+        items = raw if isinstance(raw, list) else ([raw] if isinstance(raw, str) else [])
+        out[key] = [i.strip()[:200] for i in items if isinstance(i, str) and i.strip()][:6]
+    return out
+
+
+# Who said what on an RM-CSP call. The RM reviews the CSP's performance; the CSP does not report it.
+_RM_CSP_ATTRIBUTION = (
+    "WHO SAYS WHAT: on these calls the RM - NOT the CSP - tells the CSP how they are performing: WHERE THEY "
+    "STAND now (achievement against target), WHY they are there (the reasons for any gap) and WHAT IT SHOULD "
+    "BE (the target or expected level). Record that as the RM's own review in \"performance\": "
+    "{\"what\": [str], \"why\": [str], \"should_be\": [str]}, and write the summary from the RM's point of "
+    "view (\"RM reviewed ...\"), never as if the CSP reported or achieved these on their own. The CSP's side is "
+    "mostly acknowledgement, the reasons or obstacles THEY raise, and promises. A target the RM states is an "
+    "EXPECTATION, not a CSP commitment: put it under \"commitments\" only if the CSP clearly agreed to it, and "
+    "then as a promise made by the CSP. "
+)
 
 
 def _trigger_call(customer_number: str) -> tuple[str, str | None]:
@@ -291,7 +325,8 @@ def generate_brief(db: Session, call: CallSession, transcript_text: str) -> dict
     from . import llm
 
     if not transcript_text.strip():
-        return dict(_EMPTY_BRIEF)
+        return _empty_brief()
+    rm_csp = call.csp_id is not None
     system = (
         "You are a State Bank of India relationship manager's assistant. You read ONE call transcript "
         "(it may have a Hindi section and an English section of the SAME call - read BOTH and merge) and "
@@ -304,9 +339,12 @@ def generate_brief(db: Session, call: CallSession, transcript_text: str) -> dict
         "these names (e.g. 'PMSBUI'->PMSBY, 'JJBUI'/'JJBOI'->PMJJBY, 'SLI'/'SLIPE'->slab) - normalise them. "
         "For EACH product the call mentions, capture the numbers: the target, how many are already achieved, "
         "and how many remain, plus the slab the CSP is in / needs for (e.g. 'Slab 1'). "
-        "Reply with ONLY a JSON object: {\"summary\": str, \"highlights\": [str], \"key_points\": [str], "
+        + (_RM_CSP_ATTRIBUTION if rm_csp else "")
+        + "Reply with ONLY a JSON object: {\"summary\": str, \"highlights\": [str], \"key_points\": [str], "
         "\"decisions\": [str], \"commitments\": [str], \"action_items\": [str], \"opportunities\": [str], "
-        "\"relationship_signals\": [str], \"suggested_next_interaction\": str}. "
+        "\"relationship_signals\": [str], \"suggested_next_interaction\": str"
+        + (", \"performance\": {\"what\": [str], \"why\": [str], \"should_be\": [str]}" if rm_csp else "")
+        + "}. "
         "\"highlights\" is the MOST IMPORTANT field - the business-critical takeaways the officer must not "
         "miss. Put here, each as one short specific string, EVERY: per-product target / achieved / remaining "
         "number and slab (e.g. \"PMSBY: 3 remaining for Slab 1\", \"PMJJBY: 26 done\", \"Slab 1 not yet "
@@ -326,13 +364,14 @@ def generate_brief(db: Session, call: CallSession, transcript_text: str) -> dict
     )
     text = llm.chat(system, transcript_text)
     if not text:
-        return dict(_EMPTY_BRIEF)
+        return _empty_brief()
     try:
         data = json.loads(llm._json_blob(text))
     except Exception:
-        return dict(_EMPTY_BRIEF)
-    brief = dict(_EMPTY_BRIEF)
+        return _empty_brief()
+    brief = _empty_brief()
     brief.update({k: v for k, v in data.items() if k in brief})
+    brief["performance"] = _clean_performance(brief.get("performance")) if rm_csp else _clean_performance(None)
     return brief
 
 

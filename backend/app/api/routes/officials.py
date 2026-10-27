@@ -16,6 +16,8 @@ from ...models.official import (
     PROVENANCED_FIELDS,
     VerificationStatus,
 )
+from ...models.commitment import Commitment, CommitmentStatus
+from ...models.intelligence_feedback import SUBJECT_OFFICIAL
 from ...models.official_date import DateKind, OfficialDate
 from ...models.organization_unit import OrganizationUnit
 from ...models.user import Role, User
@@ -29,9 +31,13 @@ from ...schemas.official import (
     SetFieldRequest,
     TimelineEntry,
 )
+from ...schemas.intelligence import CommitmentStatusUpdate, DuplicateDecision, FeedbackIn
 from ...schemas.official_date import DateSet, OfficialDateOut
 from ...security.deps import get_current_user, require_roles
 from ...services import audit
+from ...services import commitments as commitments_svc
+from ...services import intelligence_feedback as feedback_svc
+from ...services import official_intel
 from ...services.dc_territory import can_access_unit, visible_unit_ids
 from ...services.officials import recompute_verification
 
@@ -505,3 +511,99 @@ def delete_date(
         actor_id=actor.id,
     )
     db.commit()
+
+
+# ---------------------------------------------------------------------------------------------
+# Relationship intelligence for an SBI official (the DC-facing pre-call / pre-meeting briefing).
+# Every route goes through _scoped_official: a DC reaches only officials in their own territory, an
+# RM reaches none (404), and a guessed id reveals nothing. Reading is open to ADMIN / viewer / DC;
+# changing a commitment or giving feedback is ADMIN / DC only.
+# ---------------------------------------------------------------------------------------------
+
+
+def _require_writer(actor: User) -> None:
+    if actor.role not in (Role.ADMIN, Role.DC):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to change this")
+
+
+def _scoped_official_commitment(db: Session, commitment_id: int, actor: User) -> Commitment:
+    """A commitment reachable through the OFFICIAL routes: it must belong to an official the actor may
+    act on. A CSP's commitment (no official_id) is never reachable here."""
+    c = db.get(Commitment, commitment_id)
+    if c is None or c.official_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Commitment not found")
+    _scoped_official(db, c.official_id, actor)
+    return c
+
+
+@router.get("/{official_id}/intelligence")
+def official_intelligence(
+    official_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)
+):
+    """Interaction history, relationship memory, who committed what, pending follow-ups and suggested
+    discussion points - built from the existing CRM records, with the viewer's own feedback applied."""
+    official = _scoped_official(db, official_id, actor)
+    return official_intel.build_for_official(db, official, actor)
+
+
+@router.post("/commitments/{commitment_id}/status")
+def set_official_commitment_status(
+    commitment_id: int, payload: CommitmentStatusUpdate,
+    db: Session = Depends(get_db), actor: User = Depends(get_current_user),
+):
+    c = _scoped_official_commitment(db, commitment_id, actor)
+    _require_writer(actor)
+    try:
+        target = CommitmentStatus(payload.status)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid status")
+    if target == CommitmentStatus.PROPOSED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid status")
+    try:
+        commitments_svc.set_status(db, c, target, actor, outcome=payload.outcome)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    return commitments_svc.commitment_dict(db, c)
+
+
+@router.post("/commitments/{commitment_id}/duplicate")
+def review_official_commitment_duplicate(
+    commitment_id: int, payload: DuplicateDecision,
+    db: Session = Depends(get_db), actor: User = Depends(get_current_user),
+):
+    c = _scoped_official_commitment(db, commitment_id, actor)
+    _require_writer(actor)
+    try:
+        commitments_svc.review_duplicate(db, c, payload.decision, actor)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    return commitments_svc.commitment_dict(db, c)
+
+
+@router.get("/commitments/{commitment_id}/history")
+def official_commitment_history(
+    commitment_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user),
+):
+    c = _scoped_official_commitment(db, commitment_id, actor)
+    return {"commitment_id": c.id, "events": commitments_svc.history(db, c)}
+
+
+@router.post("/{official_id}/feedback")
+def official_feedback(
+    official_id: int, payload: FeedbackIn,
+    db: Session = Depends(get_db), actor: User = Depends(get_current_user),
+):
+    """Say whether a talking point was useful / a suggested follow-up relevant. Checked against what
+    the server generates now, so a verdict cannot be forged for a suggestion that does not exist."""
+    official = _scoped_official(db, official_id, actor)
+    _require_writer(actor)
+    try:
+        row = feedback_svc.submit(
+            db, actor, SUBJECT_OFFICIAL, official.id, payload.target_type, payload.key, payload.verdict,
+            payload.note, official_intel.items_for_official(db, official),
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc))
+    return {"ok": True, "verdict": row.verdict}

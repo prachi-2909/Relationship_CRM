@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { Badge, VerificationBadge } from "../components/Badge";
 import { useAuth } from "../auth/AuthProvider";
+import { OfficialIntelligenceCard } from "../components/OfficialIntelligence";
 import { api, ApiError } from "../lib/api";
 import {
   CONNECTION_TYPE_LABELS,
@@ -110,6 +111,8 @@ export function OfficialProfilePage() {
       </div>
 
       <CreatedViaCallNote entries={timelineQuery.data} />
+
+      <OfficialIntelligenceCard officialId={officialId} />
 
       <ContactInfo official={official} canEdit={canEdit} onSaved={invalidate} />
 

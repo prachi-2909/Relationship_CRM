@@ -1,15 +1,24 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { Badge } from "../components/Badge";
+import {
+  HiddenNote,
+  OpenCommitmentRows,
+  ProposalRows,
+  Subhead,
+  SuggestionList,
+  useIntelligenceActions,
+  type IntelligenceScope,
+} from "../components/IntelligenceParts";
 import { CakeIcon, MailIcon, PhoneIcon } from "../components/sectionUi";
 import { Card, Spinner } from "../components/ui";
+import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError } from "../lib/api";
 import {
   CALL_PROCESSING_STATUS_TONE,
   type CallSessionDetail,
-  type Commitment,
   type CspProfileResponse,
   type PreCallResponse,
 } from "../types";
@@ -152,26 +161,25 @@ function BackLink() {
   );
 }
 
-/** Pre-Call Intelligence: open commitments, relationship memory and the last conversation, with
- * suggested talking points — everything the RM should see before dialling this CSP. */
+/** Pre-Call Intelligence: what the RM told the CSP last time, the commitments both sides made, the AI's
+ * suggestions to review, relationship memory and talking points - everything to know before dialling. */
 function PreCallCard({ data, cspId }: { data: PreCallResponse; cspId: string }) {
-  const qc = useQueryClient();
+  const { user } = useAuth();
   const [showMemory, setShowMemory] = useState(false);
-  const setStatus = useMutation({
-    mutationFn: (v: { id: number; status: string }) =>
-      api(`/csps/commitments/${v.id}/status`, {
-        method: "POST",
-        body: JSON.stringify({ status: v.status }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["csp", "pre-call", cspId] });
-    },
-  });
+  const scope: IntelligenceScope = {
+    base: "/csps",
+    subjectId: Number(cspId),
+    queryKey: ["csp", "pre-call", cspId],
+    canAct: user?.role === "admin" || user?.role === "relationship_manager",
+  };
+  const actions = useIntelligenceActions(scope);
   const oc = data.open_commitments;
+  const perf = data.performance;
   const nothing =
     oc.total === 0 &&
     data.proposed_commitments.length === 0 &&
-    data.talking_points.length === 0 &&
+    data.talking_point_items.length === 0 &&
+    !perf &&
     !data.last_call &&
     data.memory.length === 0;
 
@@ -184,101 +192,83 @@ function PreCallCard({ data, cspId }: { data: PreCallResponse; cspId: string }) 
 
       {nothing && (
         <p className="text-sm text-muted-foreground">
-          No prior calls or open items yet — this will fill in after your first recorded call.
+          No prior calls or open items yet &mdash; this will fill in after your first recorded call.
         </p>
       )}
+      {actions.error && <p className="mb-2 text-xs text-destructive">{actions.error}</p>}
 
-      {/* Talking points */}
-      {data.talking_points.length > 0 && (
+      {data.talking_point_items.length > 0 && (
         <div className="mb-3 rounded-lg border border-saffron/40 bg-saffron/10 p-3">
           <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[hsl(38_80%_28%)]">
             Talking points
           </div>
-          <ul className="space-y-1">
-            {data.talking_points.map((t, i) => (
-              <li key={i} className="flex gap-1.5 text-sm text-foreground">
-                <span className="mt-0.5 text-saffron">→</span>
-                <span>{t}</span>
-              </li>
-            ))}
-          </ul>
+          <SuggestionList items={data.talking_point_items} scope={scope} actions={actions} />
+          <HiddenNote count={data.suppressed_count} />
         </div>
       )}
 
-      {/* AI suggestions — only become commitments once the RM accepts them */}
+      {perf && (
+        <div className="mb-3 rounded-lg border border-border bg-card p-3">
+          <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            What you told them last time
+          </div>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Your own review from the call on {new Date(perf.from).toLocaleDateString()} &mdash; the CSP does not
+            report these figures, you do.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {(
+              [
+                ["Where they stand", perf.what],
+                ["Why", perf.why],
+                ["What it should be", perf.should_be],
+              ] as const
+            ).map(([label, lines]) => (
+              <div key={label}>
+                <Subhead>{label}</Subhead>
+                {lines.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">&mdash;</p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {lines.map((l, i) => (
+                      <li key={i} className="text-sm text-foreground">
+                        {l}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {data.proposed_commitments.length > 0 && (
         <div className="mb-3 rounded-lg border border-dashed border-primary/40 bg-card p-3">
           <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Suggested from your calls
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
-            The AI picked these out of your call briefs. Accept the ones that were really agreed;
-            dismiss the rest.
+            The AI picked these out of your call briefs. Accept what was really agreed; dismiss the rest. Where one
+            looks like an earlier commitment you decide whether it is the same &mdash; nothing is merged for you.
           </p>
-          <ul className="space-y-2">
-            {data.proposed_commitments.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-start gap-2 text-sm">
-                <span className="min-w-0 flex-1 text-foreground">
-                  {c.text}
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    ({c.party === "theirs" ? "they" : c.party === "ours" ? "you" : "both"})
-                  </span>
-                </span>
-                <span className="flex shrink-0 gap-1.5">
-                  <button
-                    disabled={setStatus.isPending}
-                    onClick={() => setStatus.mutate({ id: c.id, status: "open" })}
-                    className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-secondary disabled:opacity-50"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    disabled={setStatus.isPending}
-                    onClick={() => setStatus.mutate({ id: c.id, status: "cancelled" })}
-                    className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
-                  >
-                    Dismiss
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          {setStatus.error instanceof ApiError && (
-            <p className="mt-2 text-xs text-destructive">{setStatus.error.message}</p>
-          )}
+          <ProposalRows items={data.proposed_commitments} scope={scope} actions={actions} />
         </div>
       )}
 
-      {/* Open commitments */}
       {oc.total > 0 && (
         <div className="mb-3 grid gap-3 sm:grid-cols-2">
-          <CommitmentGroup
-            title="You committed"
-            items={[...oc.ours, ...oc.mutual]}
-            pending={setStatus.isPending}
-            onDone={(id) => setStatus.mutate({ id, status: "done" })}
-          />
-          <CommitmentGroup
-            title="They committed"
-            items={oc.theirs}
-            pending={setStatus.isPending}
-            onDone={(id) => setStatus.mutate({ id, status: "done" })}
-          />
+          <OpenCommitmentRows title="You committed" items={[...oc.ours, ...oc.mutual]} scope={scope} actions={actions} />
+          <OpenCommitmentRows title="They committed" items={oc.theirs} scope={scope} actions={actions} />
         </div>
       )}
 
-      {/* Slab status */}
       {data.slab_status.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Current slab status
-          </div>
+          <Subhead>Current slab status</Subhead>
           <div className="flex flex-wrap gap-1.5">
             {data.slab_status.map((s, i) => (
-              <span
-                key={i}
-                className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-foreground"
-              >
+              <span key={i} className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-foreground">
                 {s}
               </span>
             ))}
@@ -286,30 +276,23 @@ function PreCallCard({ data, cspId }: { data: PreCallResponse; cspId: string }) 
         </div>
       )}
 
-      {/* Last call */}
       {data.last_call && (
         <div className="mb-3 rounded-lg border border-border bg-card p-3">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Last call · {new Date(data.last_call.when).toLocaleDateString()}
-          </div>
+          <Subhead>Last call &middot; {new Date(data.last_call.when).toLocaleDateString()}</Subhead>
           <p className="text-sm text-foreground">{data.last_call.summary || "No summary."}</p>
         </div>
       )}
 
-      {/* Relationship memory */}
       {data.memory.length > 0 && (
         <div>
-          <button
-            onClick={() => setShowMemory((v) => !v)}
-            className="text-xs font-medium text-secondary hover:underline"
-          >
+          <button onClick={() => setShowMemory((v) => !v)} className="text-xs font-medium text-secondary hover:underline">
             {showMemory ? "Hide" : "Show"} relationship memory ({data.memory.length})
           </button>
           {showMemory && (
             <ul className="mt-2 space-y-1">
               {data.memory.map((m, i) => (
                 <li key={i} className="flex gap-1.5 text-xs text-muted-foreground">
-                  <span className="mt-0.5">•</span>
+                  <span className="mt-0.5">&bull;</span>
                   <span>{m.fact}</span>
                 </li>
               ))}
@@ -318,58 +301,6 @@ function PreCallCard({ data, cspId }: { data: PreCallResponse; cspId: string }) 
         </div>
       )}
     </Card>
-  );
-}
-
-function CommitmentGroup({
-  title,
-  items,
-  pending,
-  onDone,
-}: {
-  title: string;
-  items: Commitment[];
-  pending: boolean;
-  onDone: (id: number) => void;
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-3">
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {title}
-        </div>
-        <p className="text-xs text-muted-foreground">None open.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </div>
-      <ul className="space-y-2">
-        {items.map((c) => (
-          <li key={c.id} className="flex items-start gap-2 text-sm">
-            <button
-              title="Mark done"
-              disabled={pending}
-              onClick={() => onDone(c.id)}
-              className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border border-muted-foreground/40 transition-colors hover:border-[hsl(155_45%_40%)] hover:bg-[hsl(155_45%_40%)]/10 disabled:opacity-50"
-            >
-              <span className="h-2 w-2 rounded-full" />
-            </button>
-            <span className="min-w-0 flex-1 text-foreground">
-              {c.text}
-              {c.due_date && (
-                <span className="ml-1.5 text-xs text-muted-foreground">
-                  (by {new Date(c.due_date + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" })})
-                </span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 

@@ -998,6 +998,15 @@ export interface CspProfileResponse {
 export type CommitmentParty = "ours" | "theirs" | "mutual";
 export type CommitmentStatus = "proposed" | "open" | "done" | "cancelled";
 
+export interface CommitmentRef {
+  id: number;
+  text: string;
+  party: CommitmentParty;
+  status: CommitmentStatus;
+  due_date: string | null;
+  source_call_id: number | null;
+}
+
 export interface Commitment {
   id: number;
   text: string;
@@ -1006,6 +1015,28 @@ export interface Commitment {
   status: CommitmentStatus;
   source: string;
   created_at: string | null;
+  source_call_id: number | null;
+  owner_user_id: number | null;
+  /** Set while a human has yet to rule on a near-duplicate of an earlier commitment. */
+  possible_duplicate?: CommitmentRef;
+  /** On a survivor: the repeats a human folded into it (kept, with their own owner/due date/call). */
+  also_mentioned?: { id: number; due_date: string | null; source_call_id: number | null; owner_user_id: number | null }[];
+}
+
+/** One suggestion the system generated, keyed so a person can rate it. */
+export interface SuggestionItem {
+  key: string;
+  type: "talking_point" | "followup";
+  kind: string;
+  text: string;
+  my_verdict: "useful" | "not_useful" | "relevant" | "not_relevant" | null;
+}
+
+export interface RmPerformanceReview {
+  what: string[];
+  why: string[];
+  should_be: string[];
+  from: string;
 }
 
 export interface PreCallResponse {
@@ -1033,8 +1064,12 @@ export interface PreCallResponse {
   /** AI suggestions from call briefs, awaiting the RM's accept / dismiss. Not obligations yet. */
   proposed_commitments: Commitment[];
   slab_status: string[];
+  /** What the RM told the CSP last time: where they stand, why, and what it should be. */
+  performance: RmPerformanceReview | null;
   memory: { fact: string; kind: string; from: string }[];
   talking_points: string[];
+  talking_point_items: SuggestionItem[];
+  suppressed_count: number;
 }
 
 export interface BirthdayWishDraft {
@@ -1104,4 +1139,38 @@ export interface DashboardOverview {
   calls_by_direction: NameValue[];
   calls_timeline: { date: string; value: number }[];
   upcoming_birthdays: UpcomingBirthday[];
+}
+
+export interface OfficialIntelligence {
+  official: { id: number; name: string; level: string | null; unit: string | null };
+  relationship: {
+    id: number; status: string; importance: string; score: number; band: string; days_since_contact: number | null;
+  } | null;
+  interactions: { id: number; occurred_at: string; type: string; direction: string; sentiment: string; summary: string }[];
+  memory: { fact: string; kind: string; state: string | null }[];
+  /** ours = the DC (and joint ones); theirs = the official. */
+  commitments: { ours: Commitment[]; theirs: Commitment[]; mutual: Commitment[]; total: number };
+  proposed_commitments: Commitment[];
+  followups: { id: number; title: string; due_at: string | null; overdue: boolean }[];
+  upcoming_dates: { kind: string; label: string; in_days: number }[];
+  talking_point_items: SuggestionItem[];
+  followup_suggestion_items: SuggestionItem[];
+  suppressed_count: number;
+}
+
+export interface RateStat {
+  n: number;
+  positive: number;
+  rate: number | null;
+  enough_data: boolean;
+}
+
+export interface QualityMetrics {
+  min_sample: number;
+  generated_at: string;
+  talking_points: { overall: RateStat; by_kind: Record<string, RateStat> };
+  followups: { overall: RateStat; by_kind: Record<string, RateStat> };
+  proposals: RateStat & { accepted: number; dismissed: number };
+  fulfilment: RateStat & { done: number; closed_without_doing: number; reported_not_fulfilled: number };
+  duplicate_flags: RateStat & { confirmed_duplicate: number; different_after_all: number; note: string };
 }

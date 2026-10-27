@@ -43,6 +43,7 @@ const NAV: NavGroup[] = [
       { to: "/moments", label: "Engagement Moments", hiddenForDc: true },
       { to: "/agent", label: "Autonomous Agent", hiddenForDc: true },
       { to: "/learning", label: "Learning Dashboard", adminOnly: true, hiddenForDc: true },
+      { to: "/intelligence-quality", label: "Intelligence Quality", adminOnly: true, hiddenForDc: true },
       { to: "/import", label: "Data Ingestion", hiddenForDc: true },
     ],
   },

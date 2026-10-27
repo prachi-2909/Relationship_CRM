@@ -5,6 +5,9 @@ import com.eko.rcrm.dc.data.remote.dto.AttestChallengeDto
 import com.eko.rcrm.dc.data.remote.dto.CommitmentDto
 import com.eko.rcrm.dc.data.remote.dto.CommitmentStatusRequestDto
 import com.eko.rcrm.dc.data.remote.dto.CspDto
+import com.eko.rcrm.dc.data.remote.dto.DuplicateDecisionRequestDto
+import com.eko.rcrm.dc.data.remote.dto.FeedbackRequestDto
+import com.eko.rcrm.dc.data.remote.dto.OfficialBriefingDto
 import com.eko.rcrm.dc.data.remote.dto.PreCallDto
 import com.eko.rcrm.dc.data.remote.dto.AttestVerifyRequestDto
 import com.eko.rcrm.dc.data.remote.dto.AttestVerifyResponseDto
@@ -163,6 +166,35 @@ interface ApiService {
         @Path("id") commitmentId: Int,
         @Body request: CommitmentStatusRequestDto
     ): CommitmentDto
+
+    @POST("csps/commitments/{id}/duplicate")
+    suspend fun reviewCspCommitmentDuplicate(
+        @Path("id") commitmentId: Int,
+        @Body request: DuplicateDecisionRequestDto
+    ): CommitmentDto
+
+    @POST("csps/{id}/feedback")
+    suspend fun sendCspFeedback(@Path("id") cspId: Int, @Body request: FeedbackRequestDto)
+
+    // ---- SBI-official briefing (DC; the server scopes it to the DC's territory and answers 404 otherwise) ----
+
+    @GET("officials/{id}/intelligence")
+    suspend fun getOfficialIntelligence(@Path("id") officialId: Int): OfficialBriefingDto
+
+    @POST("officials/commitments/{id}/status")
+    suspend fun setOfficialCommitmentStatus(
+        @Path("id") commitmentId: Int,
+        @Body request: CommitmentStatusRequestDto
+    ): CommitmentDto
+
+    @POST("officials/commitments/{id}/duplicate")
+    suspend fun reviewOfficialCommitmentDuplicate(
+        @Path("id") commitmentId: Int,
+        @Body request: DuplicateDecisionRequestDto
+    ): CommitmentDto
+
+    @POST("officials/{id}/feedback")
+    suspend fun sendOfficialFeedback(@Path("id") officialId: Int, @Body request: FeedbackRequestDto)
 
     // ---- App self-update ----
 

@@ -26,6 +26,8 @@ already hide playback in that case.
 | Commitment **open** | Never expires. It stays until a human marks it done or cancelled. | - |
 | Commitment **done / cancelled / expired** | Deleted N days after it was closed (audited `commitment.purged`, ids and status only - never the text). | `commitment_closed_retention_days` = 730 |
 | CSP **relationship memory** | Derived, not stored: built from briefs on demand. Only briefs from the last N days contribute, so old facts age out of pre-call intelligence. | `memory_lookback_days` = 365 |
+| Commitment **history** (`commitment_events`) | Ids and scalars only (status, outcome, who acted, duplicate links) - never text. Deleted with its commitment. | follows `commitment_closed_retention_days` |
+| **Outcome feedback** (`intelligence_feedback`) | One row per user per suggestion: verdict, the suggestion's text snapshot, and who gave it. Deleted N days after the verdict was last changed (audited `intelligence.feedback_purged`, counts only). | `intelligence_feedback_retention_days` = 730 |
 
 These are defaults chosen to be conservative and are **not yet confirmed by compliance** - change them
 in config, no code change needed. The same rules apply to both call streams; `source_kind` on each
@@ -58,6 +60,6 @@ commitment (`rm_csp` / `dc_official`) lets a per-stream rule be added later.
 `call.audio_purged_retention_expired` (RM audio; records scope, age, whether a transcript existed),
 `media.delete_failed`, `media.delete_retried_ok`, `media.delete_abandoned`, `media.orphan_removed`,
 `media.orphan_remove_failed`, `media.orphan_sweep_aborted`, `commitment.proposal_expired`,
-`commitment.purged`, plus the existing `call.artifacts_discarded_after_logging` and
+`commitment.purged`, `intelligence.feedback` (a verdict given), `intelligence.feedback_purged`, plus the existing `call.artifacts_discarded_after_logging` and
 `call.artifacts_discarded_retention_expired` for the DC stream. Audit entries carry file names, never
 full paths, and never transcript or commitment text.

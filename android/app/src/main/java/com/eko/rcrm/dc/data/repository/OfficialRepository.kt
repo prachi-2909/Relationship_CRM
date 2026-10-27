@@ -1,9 +1,14 @@
 package com.eko.rcrm.dc.data.repository
 
 import com.eko.rcrm.dc.data.remote.ApiService
+import com.eko.rcrm.dc.data.remote.dto.CommitmentStatusRequestDto
+import com.eko.rcrm.dc.data.remote.dto.DuplicateDecisionRequestDto
+import com.eko.rcrm.dc.data.remote.dto.FeedbackRequestDto
 import com.eko.rcrm.dc.data.remote.dto.OfficialCreateRequestDto
 import com.eko.rcrm.dc.data.remote.dto.OfficialUpdateRequestDto
+import com.eko.rcrm.dc.domain.model.Commitment
 import com.eko.rcrm.dc.domain.model.Official
+import com.eko.rcrm.dc.domain.model.OfficialBriefing
 import com.eko.rcrm.dc.util.Result
 import com.eko.rcrm.dc.util.safeApiCall
 import javax.inject.Inject
@@ -26,6 +31,35 @@ class OfficialRepository @Inject constructor(
 
     suspend fun getOfficial(id: Int): Result<Official> = safeApiCall {
         apiService.getOfficial(id).toDomain()
+    }
+
+    /** The DC's relationship briefing on one official. The server answers 404 for an official outside
+     * the DC's territory. Built from interactions, tasks and memory - never from call audio. */
+    suspend fun getBriefing(officialId: Int): Result<OfficialBriefing> = safeApiCall {
+        apiService.getOfficialIntelligence(officialId).toDomain()
+    }
+
+    suspend fun setCommitmentStatus(
+        commitmentId: Int,
+        status: String,
+        outcome: String? = null
+    ): Result<Commitment> = safeApiCall {
+        apiService.setOfficialCommitmentStatus(commitmentId, CommitmentStatusRequestDto(status, outcome)).toDomain()
+    }
+
+    suspend fun reviewDuplicate(commitmentId: Int, decision: String): Result<Commitment> = safeApiCall {
+        apiService.reviewOfficialCommitmentDuplicate(commitmentId, DuplicateDecisionRequestDto(decision)).toDomain()
+    }
+
+    /** Rate a suggestion: [targetType] "talking_point" | "followup"; [verdict] useful / not_useful /
+     * relevant / not_relevant. */
+    suspend fun sendFeedback(
+        officialId: Int,
+        targetType: String,
+        key: String,
+        verdict: String
+    ): Result<Unit> = safeApiCall {
+        apiService.sendOfficialFeedback(officialId, FeedbackRequestDto(targetType, key, verdict))
     }
 
     /** organizationUnitId is required - the server 422s a DC-authored create without one. */

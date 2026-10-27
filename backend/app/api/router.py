@@ -16,6 +16,7 @@ from .routes import (
     dc_territory,
     health,
     imports,
+    intelligence,
     interactions,
     knowledge,
     memory,
@@ -44,6 +45,7 @@ api_router.include_router(relationships.router)
 api_router.include_router(interactions.router)
 api_router.include_router(connections.router)
 api_router.include_router(csps.router)
+api_router.include_router(intelligence.router)
 api_router.include_router(opportunities.router)
 api_router.include_router(tasks.router)
 api_router.include_router(imports.router)

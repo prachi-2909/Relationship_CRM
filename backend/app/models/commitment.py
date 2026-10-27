@@ -14,7 +14,7 @@ text itself is a CRM record in both cases.
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime
+from sqlalchemy import JSON, Date, DateTime, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -83,5 +83,46 @@ class Commitment(Base, TimestampMixin):
     )
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # --- near-duplicate review (a human decides; nothing is ever merged silently) ---
+    # The earlier commitment this one looks like (set at extraction when the wording is similar).
+    possible_duplicate_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commitments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # None = never flagged | "flagged" = awaiting a human | "separate" = human said different |
+    # "merged" = human said same (this row was closed into merged_into_id; it is kept, not deleted).
+    duplicate_review: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("commitments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     csp = relationship("Csp", lazy="joined")
     official = relationship("Official", lazy="joined")
+
+    possible_duplicate_of = relationship(
+        "Commitment", remote_side="Commitment.id", foreign_keys="Commitment.possible_duplicate_of_id",
+        lazy="select", viewonly=True,
+    )
+
+
+class CommitmentEvent(Base):
+    """One entry in a commitment's own history: proposed, accepted, dismissed, done, merged, ...
+
+    Kept per commitment so the acceptance/dismissal trail survives a merge and is readable without
+    digging through the global audit log. `detail` holds ids and small scalars only - never the
+    commitment text - so retention of the text is governed solely by the commitment row. A commitment
+    that is purged takes its events with it."""
+
+    __tablename__ = "commitment_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    commitment_id: Mapped[int] = mapped_column(
+        ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

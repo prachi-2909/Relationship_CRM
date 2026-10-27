@@ -23,9 +23,11 @@ from .call_intelligence import (
     CallVoiceNote,
     IdentityStatus,
 )
+from .intelligence_feedback import IntelligenceFeedback
 from .media_deletion import MediaDeletion
 from .commitment import (
     Commitment,
+    CommitmentEvent,
     CommitmentParty,
     CommitmentSourceKind,
     CommitmentStatus,
@@ -131,7 +133,9 @@ __all__ = [
     "Csp",
     "CspStatus",
     "MediaDeletion",
+    "IntelligenceFeedback",
     "Commitment",
+    "CommitmentEvent",
     "CommitmentParty",
     "CommitmentStatus",
     "CommitmentSourceKind",

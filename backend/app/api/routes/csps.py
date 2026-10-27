@@ -17,9 +17,12 @@ from ...models.commitment import Commitment, CommitmentParty, CommitmentStatus
 from ...models.csp import Csp, CspStatus
 from ...models.user import Role, User
 from ...schemas.call_intelligence import CallSessionDetail
+from ...schemas.intelligence import CommitmentStatusUpdate, DuplicateDecision, FeedbackIn
 from ...schemas.csp import CspByRmResponse, CspOut, CspProfileResponse, CspRmGroup
 from ...security.deps import get_current_user, require_roles
+from ...models.intelligence_feedback import SUBJECT_CSP
 from ...services import commitments as commitments_svc
+from ...services import intelligence_feedback as feedback_svc
 from ...services import csp_sync
 from ...services import precall
 
@@ -82,8 +85,15 @@ class CommitmentCreate(BaseModel):
     due_date: date | None = None
 
 
-class CommitmentStatusUpdate(BaseModel):
-    status: str              # open | done | cancelled
+def _scoped_csp_commitment(db: Session, commitment_id: int, actor: User) -> Commitment:
+    """A commitment reachable through the CSP routes. It must belong to a CSP the actor may act on:
+    one that belongs to an SBI official (no csp_id) is NOT reachable here - those have their own,
+    DC-territory-scoped routes - so an RM can never touch a DC's official commitments."""
+    c = db.get(Commitment, commitment_id)
+    if c is None or c.csp_id is None:
+        raise HTTPException(status_code=404, detail="Commitment not found")
+    _scoped_csp(db, c.csp_id, actor)  # 404 unless the RM owns the CSP (admins pass)
+    return c
 
 
 @router.get("/{csp_pk}/pre-call")
@@ -92,7 +102,28 @@ def csp_pre_call(csp_pk: int, db: Session = Depends(get_db), actor: User = Depen
     briefs), the last conversation, current slab status and suggested talking points - everything the
     RM should see before dialling. RM sees only their own CSPs."""
     csp = _scoped_csp(db, csp_pk, actor)
-    return precall.build_for_csp(db, csp)
+    return precall.build_for_csp(db, csp, actor)
+
+
+@router.post("/{csp_pk}/feedback")
+def csp_feedback(
+    csp_pk: int, payload: FeedbackIn, db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """Say whether a talking point for this CSP was useful. RM only for their own CSP (admin any); the
+    suggestion is checked against what the server generates now, so nothing can be forged."""
+    if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
+        raise HTTPException(status_code=403, detail="Not allowed to give feedback")
+    csp = _scoped_csp(db, csp_pk, actor)
+    try:
+        row = feedback_svc.submit(
+            db, actor, SUBJECT_CSP, csp.id, payload.target_type, payload.key, payload.verdict,
+            payload.note, precall.items_for_csp(db, csp),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"ok": True, "verdict": row.verdict}
 
 
 @router.get("/{csp_pk}/commitments")
@@ -105,8 +136,8 @@ def csp_commitments(
     items = commitments_svc.list_for_csp(db, csp.id, include_closed=include_closed)
     proposed = commitments_svc.list_for_csp(db, csp.id, proposed_only=True)
     return {
-        "items": [precall._commitment_dict(c) for c in items], "total": len(items),
-        "proposed": [precall._commitment_dict(c) for c in proposed],
+        "items": [commitments_svc.commitment_dict(db, c) for c in items], "total": len(items),
+        "proposed": [commitments_svc.commitment_dict(db, c) for c in proposed],
     }
 
 
@@ -129,7 +160,7 @@ def add_csp_commitment(
     c = commitments_svc.add_manual(
         db, csp=csp, text=text, party=party, due_date=payload.due_date, actor=actor
     )
-    return precall._commitment_dict(c)
+    return commitments_svc.commitment_dict(db, c)
 
 
 @router.post("/commitments/{commitment_id}/status")
@@ -140,11 +171,7 @@ def update_commitment_status(
     """Mark a commitment done / cancelled / reopened. RM may only touch their own CSP's commitments."""
     if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
         raise HTTPException(status_code=403, detail="Not allowed to update commitments")
-    c = db.get(Commitment, commitment_id)
-    if c is None:
-        raise HTTPException(status_code=404, detail="Commitment not found")
-    if c.csp_id is not None and actor.role == Role.RELATIONSHIP_MANAGER:
-        _scoped_csp(db, c.csp_id, actor)  # raises 404 if not the RM's CSP
+    c = _scoped_csp_commitment(db, commitment_id, actor)
     try:
         status = CommitmentStatus(payload.status)
     except ValueError:
@@ -152,10 +179,36 @@ def update_commitment_status(
     if status == CommitmentStatus.PROPOSED:
         raise HTTPException(status_code=400, detail="Invalid status")
     try:
-        commitments_svc.set_status(db, c, status, actor)
+        commitments_svc.set_status(db, c, status, actor, outcome=payload.outcome)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return precall._commitment_dict(c)
+    return commitments_svc.commitment_dict(db, c)
+
+
+@router.post("/commitments/{commitment_id}/duplicate")
+def review_commitment_duplicate(
+    commitment_id: int, payload: DuplicateDecision,
+    db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """Rule on a flagged near-duplicate: "merge" (same commitment - this one is closed into the earlier
+    one, nothing is deleted) or "separate" (different - keep both). A human always decides."""
+    if actor.role not in (Role.ADMIN, Role.RELATIONSHIP_MANAGER):
+        raise HTTPException(status_code=403, detail="Not allowed to update commitments")
+    c = _scoped_csp_commitment(db, commitment_id, actor)
+    try:
+        commitments_svc.review_duplicate(db, c, payload.decision, actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return commitments_svc.commitment_dict(db, c)
+
+
+@router.get("/commitments/{commitment_id}/history")
+def commitment_history(
+    commitment_id: int, db: Session = Depends(get_db), actor: User = Depends(_VIEWERS),
+):
+    """The commitment's own trail: proposed, accepted / dismissed, done, merged ..., with who and when."""
+    c = _scoped_csp_commitment(db, commitment_id, actor)
+    return {"commitment_id": c.id, "events": commitments_svc.history(db, c)}
 
 
 @router.get("/{csp_pk}/profile", response_model=CspProfileResponse)
