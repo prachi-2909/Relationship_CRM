@@ -20,7 +20,7 @@ services:
     environment:
       ENVIRONMENT: production
       DATABASE_URL: sqlite+pysqlite:////app/data/relationship_crm.db
-      CORS_ORIGINS: '["http://localhost"]'
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost"]}'
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
       LLM_BASE_URL: ${LLM_BASE_URL:-}

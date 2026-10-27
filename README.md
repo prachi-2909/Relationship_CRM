@@ -156,3 +156,10 @@ when the RAG phase needs `pgvector`):
 1. `pip install "psycopg[binary]"`
 2. Set `DATABASE_URL=postgresql+psycopg://user:pass@host:5432/relationship_crm`
 3. `alembic upgrade head`
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see [LICENSE](LICENSE). The Android call recorder is
+based on CallVault, which is GPL-3.0, so the app and the code that ships with it stay under the same licence.
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
