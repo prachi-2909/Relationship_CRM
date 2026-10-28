@@ -455,7 +455,7 @@ function AskCard() {
           {turns.map((t, i) => (
             <div key={i} className="space-y-1.5 text-sm">
               <p className="font-medium text-foreground">{t.question}</p>
-              <p className="leading-relaxed text-muted-foreground">{t.response.answer}</p>
+              <p className="whitespace-pre-line leading-relaxed text-muted-foreground">{t.response.answer}</p>
               {t.response.considered.length > 0 && (
                 <p className="text-xs text-muted-foreground/80">
                   Considered:{" "}

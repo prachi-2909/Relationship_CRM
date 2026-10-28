@@ -133,3 +133,53 @@ def test_a_surname_alone_does_not_match_a_csp(client, db, make_user, login):
     _world(db, make_user)
     body = _ask(client, login, "rm-a-ask@example.com", "Dhawan ka kya haal hai").json()
     assert all(c["kind"] != "csp" for c in body["considered"])
+
+
+# --------------------------------------------------------------------------- a thread about one CSP
+
+
+def _slab_world(db, make_user):
+    rm = make_user(email="rm-s-ask@example.com", password="secret123", role=Role.RELATIONSHIP_MANAGER)
+    csp = _csp(db, rm, "1A850899", "Deepak Dhawan")
+    call = CallSession(dc_user_id=rm.id, direction=Direction.OUTBOUND, phone_ref=PHONE,
+                       started_at=datetime.now(timezone.utc), csp_id=csp.id)
+    db.add(call)
+    db.flush()
+    db.add(CallAIAnalysis(call_session_id=call.id, analysis_json={
+        "summary": "Terminal expiry must be fixed before the remaining targets.",
+        "highlights": ["PMJJBY: 2 pending for Slab 1", "PMSBY: 26 done", "Terminal expiry blocks the account opening"],
+        "commitments": [],
+    }))
+    db.commit()
+    return rm
+
+
+def test_a_specific_question_gets_just_the_matching_lines_not_the_whole_briefing(client, db, make_user, login):
+    _slab_world(db, make_user)
+    body = _ask(client, login, "rm-s-ask@example.com", "how much PMJJBY is left for Deepak Dhawan?").json()
+    assert "PMJJBY: 2 pending for Slab 1" in body["answer"]
+    assert "PMSBY: 26 done" not in body["answer"]          # unrelated lines are left out
+
+
+def test_a_follow_up_without_a_name_or_pronoun_stays_on_the_csp(client, db, make_user, login):
+    _slab_world(db, make_user)
+    first = _ask(client, login, "rm-s-ask@example.com", "how is it going with deepak dhawan").json()
+    second = client.post("/api/v1/ask", json={"question": "how much PMJJBY is left to achieve slab 1?",
+                                              "conversation_id": first["conversation_id"]}).json()
+    assert second["scope"] == "targeted" and second["considered"][0]["kind"] == "csp"
+    assert "PMJJBY: 2 pending for Slab 1" in second["answer"]
+    assert "nothing on record" not in second["answer"]
+
+
+def test_a_portfolio_question_mid_thread_still_leaves_the_csp(client, db, make_user, login):
+    _slab_world(db, make_user)
+    first = _ask(client, login, "rm-s-ask@example.com", "how is it going with deepak dhawan").json()
+    second = client.post("/api/v1/ask", json={"question": "What should I focus on this week?",
+                                              "conversation_id": first["conversation_id"]}).json()
+    assert second["scope"] == "portfolio"
+
+
+def test_the_whole_briefing_is_still_given_when_nothing_specific_is_asked(client, db, make_user, login):
+    _slab_world(db, make_user)
+    body = _ask(client, login, "rm-s-ask@example.com", "how is it going with deepak dhawan").json()
+    assert "PMJJBY: 2 pending for Slab 1" in body["answer"] and "Terminal expiry must be fixed" in body["answer"]

@@ -138,6 +138,20 @@ def _looks_like_followup(question: str) -> bool:
     return bool(tokens & _FOLLOWUP_HINTS)
 
 
+# Words that make a question about the whole book rather than the person just discussed.
+_PORTFOLIO_HINTS = {
+    "focus", "priority", "priorities", "prioritise", "prioritize", "urgent", "urgency", "top", "all", "everyone",
+    "portfolio", "relationships", "overall", "week", "today", "sabse", "sabhi", "sab", "kaun", "kisse", "kiski",
+}
+
+
+def _stays_on_csp(question: str) -> bool:
+    """In a running thread about a CSP, a question with no new name and no pronoun ("how much PMJJBY is left?")
+    is still about that CSP - unless it is plainly portfolio-wide ("what should I focus on this week?")."""
+    tokens = set(re.findall(r"[a-z']+", question.lower()))
+    return not (tokens & _PORTFOLIO_HINTS)
+
+
 def _briefs_for(db: Session, official_ids: list[int]) -> tuple[list[dict], list[dict]]:
     """Full Brief + a considered-entry for each official that has a
     relationship, in the given order. Skips ids with no relationship."""
@@ -241,11 +255,66 @@ def _synthesize(
     return _template_answer(question, scope, context), "template"
 
 
-def _csp_template(c: dict) -> str:
-    """Plain-text readout of a CSP's record, used when no language model is configured."""
+_STOPWORDS = {
+    "the", "and", "for", "are", "was", "has", "have", "had", "did", "does", "how", "what", "when", "where", "who",
+    "why", "which", "much", "many", "is", "it", "to", "of", "in", "on", "at", "a", "an", "me", "my", "i", "you",
+    "about", "tell", "give", "show", "going", "with", "that", "this", "there", "already", "left", "any", "can",
+    "ke", "ka", "ki", "hai", "hain", "kya", "kitna", "kitne", "kitni", "batao", "bataiye", "mein", "me", "se",
+    "ko", "par", "aur", "bhi", "nahi", "abhi", "tha", "thi", "wo", "woh", "uska", "uski", "unka", "unki",
+}
+
+
+def _csp_facts(c: dict) -> list[tuple[str, str]]:
+    """Every line of the CSP's record as (label, text), so a question can be matched against them."""
+    facts: list[tuple[str, str]] = []
+    last = c.get("last_call")
+    if last:
+        when = str(last.get("when") or "")[:10]
+        if last.get("summary"):
+            facts.append((f"Last call ({when})", last["summary"]))
+        facts.extend((f"Last call ({when})", h) for h in last.get("highlights") or [])
+    perf = c.get("performance_told_by_rm") or {}
+    for label, key in (("Where they stand (RM's review)", "what"), ("Why", "why"), ("What it should be", "should_be")):
+        facts.extend((label, t) for t in perf.get(key) or [])
+    for label, key in (("RM committed", "rm_committed"), ("CSP committed", "csp_committed"),
+                       ("Suggested, awaiting RM review", "suggested_commitments_awaiting_rm_review")):
+        facts.extend((label, x["text"]) for x in c.get(key) or [])
+    facts.extend(("Slab status", t) for t in c.get("slab_status") or [])
+    facts.extend(("From earlier calls", t) for t in c.get("memory") or [])
+    seen: set[str] = set()
+    unique = []
+    for label, text in facts:
+        if text.strip() and text.strip().lower() not in seen:
+            seen.add(text.strip().lower())
+            unique.append((label, text.strip()))
+    return unique
+
+
+def _relevant_facts(c: dict, question: str, limit: int = 4) -> list[tuple[str, str]]:
+    """The lines of the record that share words with the question (the CSP's own name excluded)."""
+    own = set(re.findall(r"[a-z0-9]+", f"{c['name']} {c['csp_code']}".lower()))
+    q = {t for t in re.findall(r"[a-z0-9]+", question.lower()) if len(t) > 1 and t not in _STOPWORDS and t not in own}
+    if not q:
+        return []
+    scored = []
+    for i, (label, text) in enumerate(_csp_facts(c)):
+        words = set(re.findall(r"[a-z0-9]+", text.lower()))
+        score = len(q & words)
+        if score:
+            scored.append((-score, i, label, text))
+    scored.sort()
+    return [(label, text) for _, _, label, text in scored[:limit]]
+
+
+def _csp_template(c: dict, question: str = "") -> str:
+    """Plain-text readout of a CSP's record, used when no language model is configured. A specific question
+    ("how many PMJJBY are left?") gets just the lines that match it; otherwise the whole briefing."""
     head = f"{c['name']} (CSP {c['csp_code']}, RM {c.get('rm_name') or 'unassigned'})"
     if not c.get("calls_recorded"):
         return f"{head}: no RM call is on record for this CSP yet."
+    picked = _relevant_facts(c, question)
+    if picked:
+        return "\n".join([head + ":"] + [f"- {label}: {text}" for label, text in picked])
     lines = [head + ":"]
     last = c.get("last_call")
     if last:
@@ -275,7 +344,7 @@ def _template_answer(question: str, scope: str, context: list[dict]) -> str:
         lines = []
         for c in context:
             if c.get("subject_type") == "csp":
-                lines.append(_csp_template(c))
+                lines.append(_csp_template(c, question))
             else:
                 lines.append(
                     f"{c['official_name']}: {c['what_is_important']} {c['next_interaction']}"
@@ -324,8 +393,12 @@ def answer(
     # named nobody new, but this reads as a follow-up on who was just
     # discussed ("what about his stakeholders?") -> carry that subject
     # forward instead of falling through to a portfolio-wide answer
-    if not context and prior_considered and _looks_like_followup(question):
+    pronoun_followup = _looks_like_followup(question)
+    prior_has_csp = bool(prior_considered) and any(c.get("kind") == "csp" for c in prior_considered)
+    if not context and prior_considered and (pronoun_followup or (prior_has_csp and _stays_on_csp(question))):
         prior = prior_considered[:_MAX_TARGETED]
+        if not pronoun_followup:
+            prior = [c for c in prior if c.get("kind") == "csp"]   # only the CSP thread continues unprompted
         prior_rel_ids = [c["relationship_id"] for c in prior if c.get("relationship_id") is not None]
         prior_csp_pks = [c["csp_pk"] for c in prior if c.get("kind") == "csp" and c.get("csp_pk") is not None]
         if prior_rel_ids:
