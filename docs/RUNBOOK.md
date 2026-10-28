@@ -89,25 +89,44 @@ else is published (the backend has no host port; the frontend proxies `/api` to 
 3. **Start:** `sudo docker compose up -d --build` (the compose project is named `sbi-relationship-crm`; never
    run `docker system prune` or `down` on another project). Check `curl -i http://127.0.0.1:<port>/` and
    `curl -i http://127.0.0.1:<port>/api/v1/health`.
-4. **Nginx (needs the server admin's approval).** Back up the config outside `sites-enabled`, add the block
-   to the `indev.eko.in` server, then `sudo nginx -t` and only if it passes `sudo systemctl reload nginx`:
+4. **Nginx (needs the server admin's approval).** The `indev.eko.in` block already includes
+   `/etc/nginx/eko-platform/routes.conf`, which includes `routes.d/*.conf`, so each app adds **one file of its
+   own** there and no existing file is edited. Create `/etc/nginx/eko-platform/routes.d/sbi-relationship-crm.conf`
+   (refuse if it already exists), then `sudo nginx -t` and only if it passes `sudo systemctl reload nginx`
+   (if the test fails, delete just that file):
 
    ```nginx
-   location /sbi-relationship-crm/ {
+   location = /sbi-relationship-crm { return 301 /sbi-relationship-crm/; }
+   location ^~ /sbi-relationship-crm/ {
        proxy_pass http://127.0.0.1:<CRM_HOST_PORT>/;   # the trailing slash strips the prefix
        proxy_http_version 1.1;
        proxy_set_header Host $host;
        proxy_set_header X-Real-IP $remote_addr;
        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
        proxy_set_header X-Forwarded-Proto $scheme;
-       client_max_body_size 25m;                         # call-audio uploads (the API caps a file at 20 MB)
+       proxy_read_timeout 300s;
    }
    ```
+   The server block already sets `client_max_body_size 100m`, which covers call-audio uploads (the API caps a
+   file at 20 MB), so none is set here. `^~` stops regex locations from taking the path.
 5. **Verify the exact link** `https://indev.eko.in/sbi-relationship-crm/`: login page loads, assets 200, login
    persists, and a call recording uploads. Then confirm the other apps on the server are still healthy.
-6. **Rollback:** restore the Nginx backup and reload; `docker compose down` in this project only (never `-v`
-   unless a backup is confirmed - it holds the database volume).
-7. **Android:** build the release app against the same link:
+   A quick check from the server: `curl -skI --resolve indev.eko.in:443:127.0.0.1 https://indev.eko.in/sbi-relationship-crm/`.
+6. **First admin, or load existing data.** A new deployment starts with an empty database:
+   `docker compose exec backend python -m app.scripts.create_admin --email ... --name ... --password ...`
+   (type the password yourself; do not paste it into chat or leave it in shell history). To seed it from a
+   cleaned copy of another database instead: take a backup first
+   (`docker compose cp backend:/app/data/relationship_crm.db <backup>`), `docker compose stop backend`, remove
+   the stale `-wal`/`-shm` files in the volume, `docker compose cp <clean.db> backend:/app/data/relationship_crm.db`,
+   `docker compose start backend`. The copy must be at the same migration head, must have no live sessions
+   (`delete from sessions`), and carries personal data and password hashes: delete every copy afterwards and
+   reset the passwords.
+7. **Updating.** `git pull` as the repository's owner (`sudo -u <owner> git -C <dir> pull`; root hits git's
+   "dubious ownership" check), then `docker compose up -d --build <service>`. The data lives in the
+   `crm-data` volume and survives a rebuild.
+8. **Rollback:** delete `routes.d/sbi-relationship-crm.conf`, `nginx -t`, reload; `docker compose down` in this
+   project only (never `-v` unless a backup is confirmed - it holds the database volume).
+9. **Android:** build the release app against the same link:
    `./gradlew assembleRelease -PrcrmApiBaseUrl=https://indev.eko.in/sbi-relationship-crm/api/v1/`.
 
 Transcription runs in the `transcription` container (CPU Speaches image; `TRANSCRIPTION_PROVIDER=openai` is set
