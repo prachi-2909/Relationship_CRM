@@ -23,7 +23,10 @@ android {
         // Default (used by debug): this PC's LAN IP over plain HTTP for phone-on-same-Wi-Fi
         // testing. Cleartext to this host is allowed ONLY in debug builds, via
         // src/debug/res/xml/network_security_config.xml. Release overrides this below with HTTPS.
-        buildConfigField("String", "API_BASE_URL", "\"http://192.168.30.25:8010/api/v1/\"")
+        // -PrcrmApiBaseUrl=https://... points a debug build at a real server instead (HTTPS needs no exception).
+        val debugApiBaseUrl = (project.findProperty("rcrmApiBaseUrl") as String?)
+            ?: "http://192.168.30.25:8010/api/v1/"
+        buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
     }
 
     buildTypes {

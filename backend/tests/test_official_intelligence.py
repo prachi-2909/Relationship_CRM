@@ -134,8 +134,8 @@ def test_briefing_pulls_history_memory_commitments_followups_and_suggestions(cli
 
 
 def test_the_briefing_is_just_as_complete_after_the_dc_audio_has_been_discarded(client, db, make_user, login, tmp_path, monkeypatch):
-    """The separate DC-SBI retention flow: logging the interaction deletes the audio, transcript and brief
-    from the call tables. The official briefing must not depend on any of them."""
+    """The separate DC-SBI retention flow: logging the interaction deletes the audio (the transcript and brief
+    stay). The official briefing must not depend on the audio."""
     monkeypatch.setattr(media_storage.settings, "media_dir", str(tmp_path))
     w = _world(client, db, make_user, login)
     call = CallSession(dc_user_id=w["dc_a"].id, direction=Direction.OUTBOUND, phone_ref="9000000033",
@@ -151,7 +151,8 @@ def test_the_briefing_is_just_as_complete_after_the_dc_audio_has_been_discarded(
     db.commit()
     db.refresh(call)
 
-    assert not audio.exists() and call.transcript is None and call.analysis is None and call.voice_note is None
+    assert not audio.exists() and call.voice_note is None
+    assert call.transcript is not None and call.analysis is not None          # kept: only the audio goes
     assert call.recording_status == CallSessionStatus.PURGED
     _as(client, login, "dc-a-oi@example.com")
     body = client.get(f"/api/v1/officials/{w['oa']}/intelligence").json()
@@ -327,3 +328,49 @@ def test_a_not_useful_suggestion_is_hidden_only_for_you_and_only_for_a_while(cli
     db.commit()
     _as(client, login, "dc-a-oi@example.com")
     assert gone["key"] in {p["key"] for p in _items(client, w["oa"])[0]}                         # reappears after 30 days
+
+
+# --------------------------------------------------------------------------- first call starts the relationship
+
+
+def test_the_first_logged_call_with_an_official_who_has_no_relationship_starts_one(client, db, make_user, login):
+    """Officials imported in bulk have no Relationship row. Logging a call with one must work (it used to stop
+    with "Resolve identity before confirming"), and creates the relationship rather than needing it up front."""
+    w = _world(client, db, make_user, login)
+    db.delete(w["rel_a"])
+    db.commit()
+    assert db.query(Relationship).filter_by(official_id=w["oa"]).count() == 0
+
+    call = CallSession(dc_user_id=w["dc_a"].id, direction=Direction.OUTBOUND, phone_ref="9000000061",
+                       official_id=w["oa"], relationship_id=None, started_at=NOW)
+    db.add(call)
+    db.commit()
+    interaction = call_svc.confirm_and_log(db, call, w["dc_a"], {"summary": "Renewal talk."}, "link")
+    db.commit()
+
+    rels = db.query(Relationship).filter_by(official_id=w["oa"]).all()
+    assert len(rels) == 1
+    assert call.relationship_id == rels[0].id and interaction.relationship_id == rels[0].id
+    assert interaction.official_id == w["oa"]
+
+
+def test_an_existing_relationship_is_reused_not_duplicated(client, db, make_user, login):
+    w = _world(client, db, make_user, login)
+    call = CallSession(dc_user_id=w["dc_a"].id, direction=Direction.OUTBOUND, phone_ref="9000000062",
+                       official_id=w["oa"], relationship_id=None, started_at=NOW)
+    db.add(call)
+    db.commit()
+    call_svc.confirm_and_log(db, call, w["dc_a"], {"summary": "Follow-up."}, "link")
+    db.commit()
+    assert db.query(Relationship).filter_by(official_id=w["oa"]).count() == 1
+    assert call.relationship_id == w["rel_a"].id
+
+
+def test_a_call_with_no_official_at_all_still_cannot_be_confirmed(client, db, make_user, login):
+    w = _world(client, db, make_user, login)
+    call = CallSession(dc_user_id=w["dc_a"].id, direction=Direction.OUTBOUND, phone_ref="9000000063",
+                       started_at=NOW)
+    db.add(call)
+    db.commit()
+    with pytest.raises(ValueError, match="Resolve identity"):
+        call_svc.confirm_and_log(db, call, w["dc_a"], {"summary": "x"}, "link")

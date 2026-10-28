@@ -132,6 +132,15 @@ else is published (the backend has no host port; the frontend proxies `/api` to 
 Transcription runs in the `transcription` container (CPU Speaches image; `TRANSCRIPTION_PROVIDER=openai` is set
 in compose). Allow minutes for a long call: `TRANSCRIPTION_TIMEOUT_SECONDS` defaults to 900 in compose.
 
+## SQLite under load
+
+The app opens SQLite in **WAL** mode with a 30 s busy timeout (`app/db.py`), so readers and the single writer do not
+block each other. Consequences: next to the database file there are `-wal` and `-shm` files while it is running;
+the nightly backup uses SQLite's backup API (safe); but a plain copy of `relationship_crm.db` from a running
+server can miss the newest writes, so take backups through the app's backup, `sqlite3 <db> ".backup <out>"`, or
+stop the backend cleanly first. The database must be on a local disk (a Docker volume is fine), not a network
+share. If writes keep waiting (sustained "database is locked"), that is the sign to move to PostgreSQL (below).
+
 ## Migrations
 
 ```bash

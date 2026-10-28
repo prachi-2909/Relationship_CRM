@@ -7,11 +7,12 @@ setting in `backend/app/config.py` (env var = the field name upper-cased) unless
 
 | | DC <-> SBI official | RM <-> CSP (Kiosk Operator) |
 |---|---|---|
-| **Audio** | Deleted when the call is logged into the CRM (the Interaction). Never logged: deleted after `unconfirmed_call_audio_retention_days` (7). | Deleted `rm_recording_retention_days` (**60**) days after it was stored. Audio only. |
-| **Transcript** | Goes with the audio at logging (its text survives in the CRM Interaction's notes). | **Retained. Explicitly excluded from the audio purge.** |
-| **AI brief** | Goes with the audio at logging (survives in the Interaction's summary/structured fields). | **Retained**, same as the transcript. |
+| **Audio** | Deleted when the call is logged into the CRM (the Interaction). Never logged: deleted after `unconfirmed_call_audio_retention_days` (7). **Audio only.** | Deleted `rm_recording_retention_days` (**60**) days after it was stored. Audio only. |
+| **Transcript** | **Retained.** Only the audio is deleted. | **Retained. Explicitly excluded from the audio purge.** |
+| **AI brief** | **Retained**, along with the CRM Interaction's summary. | **Retained**, same as the transcript. |
+| **Calls under 5 s** | Not recorded: the app discards the audio and the server refuses it (`min_recording_seconds`). | Same. |
 | **Who can see it** | The DC who made the call, plus staff roles. | The RM who made the call, plus admin/viewer roles. An RM sees only their own CSPs. |
-| **Code** | `services/call_intelligence.py` (`confirm_and_log`, `purge_stale_call_audio`) - unchanged. | `services/retention.py` (`purge_expired_rm_audio`). |
+| **Code** | `services/call_intelligence.py` (`confirm_and_log`, `_discard_call_artifacts`, `purge_stale_call_audio`). | `services/retention.py` (`purge_expired_rm_audio`). |
 
 The 60 days count from when the audio was stored (`created_at` of the stored recording), not from the
 call time. A purged call keeps its transcript, brief and commitments; the API reports
@@ -29,7 +30,8 @@ already hide playback in that case.
 | Commitment **history** (`commitment_events`) | Ids and scalars only (status, outcome, who acted, duplicate links) - never text. Deleted with its commitment. | follows `commitment_closed_retention_days` |
 | **Outcome feedback** (`intelligence_feedback`) | One row per user per suggestion: verdict, the suggestion's text snapshot, and who gave it. Deleted N days after the verdict was last changed (audited `intelligence.feedback_purged`, counts only). | `intelligence_feedback_retention_days` = 730 |
 
-These are defaults chosen to be conservative and are **not yet confirmed by compliance** - change them
+Keeping a DC call's transcript and brief (only the audio is deleted) is a product decision, not a compliance
+sign-off: those texts hold what an SBI official said, so confirm the period with compliance. These are defaults chosen to be conservative and are **not yet confirmed by compliance** - change them
 in config, no code change needed. The same rules apply to both call streams; `source_kind` on each
 commitment (`rm_csp` / `dc_official`) lets a per-stream rule be added later.
 

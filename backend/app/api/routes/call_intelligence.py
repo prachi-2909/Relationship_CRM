@@ -267,6 +267,8 @@ async def voice_note(
         )
     except call_svc.CallRecordingNotAllowed as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except call_svc.CallRecordingTooShort as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     db.commit()
     db.refresh(call)
     # Transcribe + brief AFTER the response is sent, so the upload is instant.

@@ -394,6 +394,10 @@ class CallRecordingNotAllowed(ValueError):
     """A recording of the call itself was offered for a number that isn't a CRM official."""
 
 
+class CallRecordingTooShort(ValueError):
+    """A recording of a call shorter than settings.min_recording_seconds - not kept."""
+
+
 def rm_retains_recording(call: CallSession) -> bool:
     """True when this call belongs to a Relationship Manager. RM calls follow a DIFFERENT policy
     from DC calls: an RM records calls with their CSP numbers (primary OR alternate, incoming or
@@ -459,6 +463,11 @@ def submit_voice_note(
     one-voice-note-per-call unique constraint."""
     if kind == AUDIO_KIND_CALL_RECORDING:
         assert_call_recording_allowed(db, call)
+        # 0 / unknown means the app did not report a length, so it is let through rather than guessed at.
+        if call.duration_seconds is not None and 0 < call.duration_seconds < settings.min_recording_seconds:
+            raise CallRecordingTooShort(
+                f"Call shorter than {settings.min_recording_seconds} seconds - the recording is not kept"
+            )
     if call.voice_note is not None:
         media_storage.delete_after_commit(db, call.voice_note.secure_object_ref)
         db.delete(call.voice_note)
@@ -800,8 +809,23 @@ def confirm_and_log(
     already crm_logged), re-confirming here UPDATES that same Interaction/
     CallReview in place instead of creating a duplicate - a call session only
     ever owns one Interaction."""
-    if call.relationship_id is None or call.official_id is None:
+    if call.official_id is None:
         raise ValueError("Resolve identity (link/create) before confirming")
+    if call.relationship_id is None:
+        # A known official who has never had a relationship (officials imported in bulk have none): the first
+        # logged call starts it, instead of refusing to log the interaction.
+        rel = db.scalar(select(Relationship).where(Relationship.official_id == call.official_id))
+        if rel is None:
+            rel = Relationship(official_id=call.official_id)
+            db.add(rel)
+            db.flush()
+            audit.record(
+                db, action="relationship.created_on_first_call", entity_type="relationship", entity_id=rel.id,
+                actor_id=actor.id, after={"official_id": call.official_id, "call_session_id": call.id},
+            )
+        call.relationship_id = rel.id
+        if call.identity_status == IdentityStatus.UNREGISTERED:
+            call.identity_status = IdentityStatus.REGISTERED
 
     rel = db.get(Relationship, call.relationship_id)
     transcript = call.transcript
@@ -880,8 +904,8 @@ def confirm_and_log(
         db, call, brief=edited_brief, status=CommitmentStatus.OPEN
     )
 
-    # DC calls are discarded after logging (DPDP data-minimisation); RM calls are KEPT - the
-    # recording + transcription stay in the CRM for the configured retention period.
+    # A DC call's audio is deleted once it is logged (the transcript and brief stay); an RM call's audio is
+    # KEPT for the configured retention period (rm_recording_retention_days) and then deleted the same way.
     if not rm_retains_recording(call):
         _discard_call_artifacts(db, call, actor_id=actor.id, action="call.artifacts_discarded_after_logging")
     db.flush()
@@ -889,14 +913,13 @@ def confirm_and_log(
 
 
 def _discard_call_artifacts(db: Session, call: CallSession, *, actor_id: int | None, action: str) -> bool:
-    """Data minimisation (DPDP): once the call is in the CRM, NOTHING of it is kept in the call tables
-    - not the audio file, not the provider recording reference, not the transcript, not the AI
-    analysis. The only surviving record is the CRM Interaction (its raw_notes holds the transcript
-    text, ai_summary/ai_structured hold the brief). Also used by the retention sweep for calls that
-    were never logged. Returns whether anything was removed."""
+    """Deletes the AUDIO of a DC call - the stored recording / voice note file and the provider
+    recording reference - once the call is in the CRM (and, via the retention sweep, for calls that were
+    never logged). The transcript and the AI brief are deliberately KEPT, as is the CRM Interaction.
+    Returns whether any audio was removed."""
     # Query each table by call id rather than trust the ORM relationships, which can be stale here
-    # (voice note / transcript are often inserted by FK, so call.transcript may read None while the
-    # row still exists). Refreshing first makes the relationship-clears below consistent too.
+    # (the voice note is often inserted by FK, so call.voice_note may read None while the row still
+    # exists). Refreshing first makes the relationship-clears below consistent too.
     discarded = False
     voice_note = db.scalar(select(CallVoiceNote).where(CallVoiceNote.call_session_id == call.id))
     if voice_note is not None:
@@ -907,18 +930,10 @@ def _discard_call_artifacts(db: Session, call: CallSession, *, actor_id: int | N
     if recording is not None:
         db.delete(recording)
         discarded = True
-    transcript = db.scalar(select(CallTranscript).where(CallTranscript.call_session_id == call.id))
-    if transcript is not None:
-        db.delete(transcript)
-        discarded = True
-    analysis = db.scalar(select(CallAIAnalysis).where(CallAIAnalysis.call_session_id == call.id))
-    if analysis is not None:
-        db.delete(analysis)
-        discarded = True
     if discarded:
         call.recording_status = CallSessionStatus.PURGED
         db.flush()
-        db.refresh(call, attribute_names=["voice_note", "recording", "transcript", "analysis"])
+        db.refresh(call, attribute_names=["voice_note", "recording"])
         audit.record(db, action=action, entity_type="call_session", entity_id=call.id, actor_id=actor_id)
     return discarded
 

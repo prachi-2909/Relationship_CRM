@@ -232,6 +232,16 @@ class NativeCallForegroundService : Service() {
                 val trimmed = CallAudioTrimmer.keepLastSeconds((recordingResult as RecordingResult.Stopped).file, talk)
                 recordingResult = RecordingResult.Stopped(trimmed, talk, (recordingResult as RecordingResult.Stopped).capability)
             }
+            // Too short to be a real conversation (dropped, mis-dialled, hung up at once): keep no audio.
+            // The call itself is still reported with its duration; only the recording is thrown away.
+            val spokenSeconds = if (talk > 0) talk else durationSeconds
+            val captured = recordingResult
+            if (connected && spokenSeconds < MIN_RECORDING_SECONDS && captured is RecordingResult.Stopped) {
+                captured.file.delete()
+                recordingResult = RecordingResult.NoUsableAudio(
+                    "Call shorter than $MIN_RECORDING_SECONDS seconds - the recording was not kept."
+                )
+            }
             val result = callRepository.completeNativeCall(
                 callId = sessionId,
                 endedAtIso = Instant.now().toString(),
@@ -361,6 +371,8 @@ class NativeCallForegroundService : Service() {
         private const val NOTIFICATION_ID = 7341
         private const val RECORDING_DIAG_NOTIFICATION_ID = 7343
         private const val NO_ANSWER_TIMEOUT_MS = 45_000L
+        /** A call shorter than this is not recorded (matches the server's min_recording_seconds). */
+        private const val MIN_RECORDING_SECONDS = 5
         private const val EXTRA_CALL_SESSION_ID = "call_session_id"
         private const val EXTRA_PHONE = "phone"
 

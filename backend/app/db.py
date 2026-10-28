@@ -9,7 +9,8 @@ from .config import get_settings
 
 settings = get_settings()
 
-_connect_args = {"check_same_thread": False} if settings.is_sqlite else {}
+# timeout: how long (s) a writer waits for the single SQLite write lock before "database is locked".
+_connect_args = {"check_same_thread": False, "timeout": 30} if settings.is_sqlite else {}
 
 engine = create_engine(
     settings.database_url,
@@ -28,6 +29,12 @@ if settings.is_sqlite:
     def _enable_sqlite_fk(dbapi_connection, _connection_record):  # pragma: no cover
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # WAL lets readers and the one writer run side by side (the default journal blocks one with the
+        # other), which matters with many users uploading and the background transcription writing.
+        # synchronous=NORMAL is the standard pairing: still safe across a crash with WAL.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 

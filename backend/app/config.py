@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     # RM <-> CSP call RECORDINGS (the audio only) are deleted this many days after they were stored.
     # Transcripts and AI briefs are NOT touched by this - see docs/data-retention.md.
     rm_recording_retention_days: int = 60
+    # A call shorter than this (a dropped, mis-dialled or instantly hung-up call) is not worth keeping or
+    # transcribing: its recording is refused and the app discards it.
+    min_recording_seconds: int = 5
     # Failed file deletions are queued and retried with backoff; after this many failed attempts the
     # deletion is marked "abandoned" and audited so an operator can step in.
     media_delete_max_attempts: int = 8

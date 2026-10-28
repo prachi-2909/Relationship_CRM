@@ -609,8 +609,7 @@ def test_native_call_log_matches_an_in_app_call_whose_end_is_not_reported_yet(cl
 
 def test_confirming_a_call_keeps_only_the_interaction(db, tmp_path, make_official, make_user, monkeypatch):
     """DPDP data minimisation: after logging, NOTHING of the call is kept in the call tables - no
-    audio, no transcript, no AI analysis. The only surviving record is the CRM Interaction, whose
-    raw_notes holds the transcript text."""
+    audio. The transcript and the AI brief stay (as does the CRM Interaction)."""
     from pathlib import Path
 
     from app.models.interaction import Interaction
@@ -642,13 +641,15 @@ def test_confirming_a_call_keeps_only_the_interaction(db, tmp_path, make_officia
     db.refresh(call)
 
     assert call.processing_status == CallSessionStatus.CRM_LOGGED
-    # Everything in the call tables is gone.
+    # Only the audio is gone: the stored file, the voice-note row and any provider recording reference.
     assert call.voice_note is None
     assert call.recording is None
-    assert call.transcript is None
-    assert call.analysis is None
     assert not audio_path.exists()
-    # The transcript text survives ONLY inside the CRM Interaction.
+    assert call.recording_status == CallSessionStatus.PURGED
+    # The transcript and the AI brief are kept.
+    assert call.transcript is not None and "renewal" in call.transcript.text.lower()
+    assert call.analysis is not None
+    # ...and so is the CRM Interaction.
     kept = db.get(Interaction, interaction.id)
     assert kept is not None and "renewal" in kept.raw_notes.lower()
 
@@ -886,3 +887,54 @@ def test_knowlarity_recording_dropped_for_a_number_not_in_the_crm(db, make_user)
     db.refresh(call)
     assert call.recording is None
     assert call.recording_status == CallSessionStatus.NO_RECORDING
+
+
+# --------------------------------------------------------------------------- calls shorter than 5 seconds
+
+
+def _call_of_length(client, db, make_user, login, tmp_path, monkeypatch, *, email, phone, seconds):
+    from app.models.call_intelligence import CallSession
+    from app.services import media_storage
+
+    monkeypatch.setattr(media_storage.settings, "media_dir", str(tmp_path))
+    official_id = _crm_territory_with_official(client, make_user, login, dc_email=email, phone=phone)
+    call_id = client.post("/api/v1/calls/outgoing", json={"official_id": official_id}).json()["id"]
+    db.get(CallSession, call_id).duration_seconds = seconds
+    db.commit()
+    return call_id
+
+
+def test_a_recording_of_a_call_under_five_seconds_is_refused_and_nothing_is_stored(
+    client, db, make_user, login, tmp_path, monkeypatch
+):
+    call_id = _call_of_length(client, db, make_user, login, tmp_path, monkeypatch,
+                              email="dc-short@example.com", phone="9811100011", seconds=4)
+    resp = _upload_call_recording(client, call_id)
+    assert resp.status_code == 422 and "5 seconds" in resp.json()["detail"]
+    assert list(tmp_path.rglob("*.m4a")) == []
+    assert client.get(f"/api/v1/calls/{call_id}").json()["has_voice_note"] is False
+
+
+def test_a_call_of_exactly_five_seconds_is_still_recorded(client, db, make_user, login, tmp_path, monkeypatch):
+    call_id = _call_of_length(client, db, make_user, login, tmp_path, monkeypatch,
+                              email="dc-five@example.com", phone="9811100012", seconds=5)
+    assert _upload_call_recording(client, call_id).status_code == 200
+
+
+def test_a_call_with_no_reported_length_is_not_guessed_at(client, db, make_user, login, tmp_path, monkeypatch):
+    """0 / unknown means the app did not say how long it was - the recording is let through, not dropped."""
+    call_id = _call_of_length(client, db, make_user, login, tmp_path, monkeypatch,
+                              email="dc-unk@example.com", phone="9811100013", seconds=0)
+    assert _upload_call_recording(client, call_id).status_code == 200
+
+
+def test_the_dcs_own_voice_note_recap_of_a_short_call_is_still_accepted(
+    client, db, make_user, login, tmp_path, monkeypatch
+):
+    call_id = _call_of_length(client, db, make_user, login, tmp_path, monkeypatch,
+                              email="dc-recap@example.com", phone="9811100014", seconds=3)
+    resp = client.post(
+        f"/api/v1/calls/{call_id}/voice-note",
+        files={"file": ("voicenote.m4a", b"fake-audio-bytes", "audio/mp4")},
+    )
+    assert resp.status_code == 200      # only a recording of the call itself is subject to the minimum
