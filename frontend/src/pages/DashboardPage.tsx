@@ -460,10 +460,14 @@ function AskCard() {
                 <p className="text-xs text-muted-foreground/80">
                   Considered:{" "}
                   {t.response.considered.map((c, j) => (
-                    <span key={c.relationship_id}>
+                    <span key={`${c.kind ?? "official"}-${c.relationship_id ?? c.csp_pk}`}>
                       {j > 0 && ", "}
                       <Link
-                        to={`/relationships/${c.relationship_id}`}
+                        to={
+                          c.kind === "csp"
+                            ? `/kiosk-operators/${c.csp_pk}`
+                            : `/relationships/${c.relationship_id}`
+                        }
                         className="text-secondary hover:underline"
                       >
                         {c.official_name}

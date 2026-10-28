@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class AskRequest(BaseModel):
@@ -17,8 +17,20 @@ class AskRequest(BaseModel):
 
 
 class Considered(BaseModel):
-    relationship_id: int
-    official_name: str
+    # An SBI official's relationship has a relationship_id; a CSP (kiosk operator) has kind="csp" and csp_pk.
+    relationship_id: int | None = None
+    official_name: str  # the person's / CSP's name
+    kind: str = "official"
+    csp_pk: int | None = None
+
+    @model_serializer(mode="wrap")
+    def _official_entries_keep_their_original_shape(self, handler):
+        """An official's entry is exactly {relationship_id, official_name} as before; kind/csp_pk appear only for a CSP."""
+        data = handler(self)
+        if self.kind == "official" and self.csp_pk is None:
+            data.pop("kind", None)
+            data.pop("csp_pk", None)
+        return data
 
 
 class SourceExcerpt(BaseModel):

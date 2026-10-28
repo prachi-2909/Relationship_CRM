@@ -855,8 +855,11 @@ export interface AuditListResponse {
 // --- supervisor / ask ---------------------------------------------------
 
 export interface AskConsidered {
-  relationship_id: number;
+  /** Set for an SBI official's relationship; null for a CSP (kiosk operator). */
+  relationship_id: number | null;
   official_name: string;
+  kind?: "official" | "csp";
+  csp_pk?: number | null;
 }
 
 export interface AskResponse {
