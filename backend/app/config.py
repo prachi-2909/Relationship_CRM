@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str = "stub"
     llm_timeout_seconds: float = 30.0
+    # Which wire format llm_base_url speaks: "openai" (any OpenAI-compatible /chat/completions endpoint -
+    # Ollama, vLLM, Groq...) or "anthropic" (Anthropic's Messages API, e.g. https://api.anthropic.com).
+    llm_provider: str = "openai"
+    llm_max_tokens: int = 4096  # reply cap; the Anthropic API requires one
 
     # DPDP master switch. When False, NO audio or text is sent to ANY AI endpoint - transcription,
     # LLM and embeddings all fall back to their offline stubs, regardless of the *_base_url values.

@@ -21,6 +21,7 @@ Local Ollama (no key, but needs the RAM for the model)::
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,7 @@ from ..config import get_settings
 from ..models.interaction import Sentiment
 
 settings = get_settings()
+logger = logging.getLogger("rcrm.llm")
 
 
 class RelationMention(BaseModel):
@@ -232,30 +234,57 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _llm_extract(text: str, interaction_type: str) -> ExtractionResult:
+def _complete(system: str, messages: list[dict], *, temperature: float, json_mode: bool = False) -> str:
+    """One completion from the configured endpoint, in whichever wire format llm_provider names. Returns the
+    reply text; raises on any transport / format error (callers decide how to degrade)."""
     import httpx  # local import: only needed when an endpoint is configured
 
-    payload = {
-        "model": settings.llm_model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"Interaction type: {interaction_type}\n\nNote:\n{text}",
-            },
-        ],
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-    }
+    if settings.llm_provider == "anthropic":
+        # Anthropic Messages API: the system prompt is a top-level field, the key goes in x-api-key, and a
+        # max_tokens cap is required. The reply is a list of content blocks.
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": settings.llm_api_key or "",
+            "anthropic-version": "2023-06-01",
+        }
+        url = settings.llm_base_url.rstrip("/") + "/v1/messages"
+        body = {
+            "model": settings.llm_model,
+            "max_tokens": settings.llm_max_tokens,
+            "temperature": temperature,
+            "system": system,
+            "messages": messages,
+        }
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            resp = client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            blocks = resp.json().get("content") or []
+        return "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+
     headers = {"Content-Type": "application/json"}
     if settings.llm_api_key:
         headers["Authorization"] = f"Bearer {settings.llm_api_key}"
-
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+    body = {
+        "model": settings.llm_model,
+        "messages": [{"role": "system", "content": system}, *messages],
+        "temperature": temperature,
+    }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
     with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
-        resp = client.post(url, json=payload, headers=headers)
+        resp = client.post(url, json=body, headers=headers)
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+        return resp.json()["choices"][0]["message"]["content"] or ""
+
+
+def _llm_extract(text: str, interaction_type: str) -> ExtractionResult:
+    content = _complete(
+        _SYSTEM_PROMPT,
+        [{"role": "user", "content": f"Interaction type: {interaction_type}\n\nNote:\n{text}"}],
+        temperature=0,
+        json_mode=True,
+    )
 
     data = json.loads(_json_blob(content))
     return ExtractionResult(
@@ -335,31 +364,15 @@ def chat(
     if not settings.ai_data_processing_enabled or not settings.llm_base_url:
         return None
     try:
-        import httpx
-
-        headers = {"Content-Type": "application/json"}
-        if settings.llm_api_key:
-            headers["Authorization"] = f"Bearer {settings.llm_api_key}"
-        url = settings.llm_base_url.rstrip("/") + "/chat/completions"
-        messages = [{"role": "system", "content": system}]
-        messages.extend(history or [])
-        messages.append({"role": "user", "content": user})
-        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
-            resp = client.post(
-                url,
-                json={
-                    "model": settings.llm_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                },
-                headers=headers,
-            )
-            resp.raise_for_status()
-            text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
-            if text.startswith("```"):
-                text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-            return text or None
+        messages = [*(history or []), {"role": "user", "content": user}]
+        text = _complete(system, messages, temperature=temperature).strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+        return text or None
     except Exception:
+        # The caller falls back to its template, but say why in the log: a wrong key, model name or URL is
+        # otherwise invisible (the brief just comes back empty).
+        logger.warning("LLM call failed (provider=%s model=%s)", settings.llm_provider, settings.llm_model, exc_info=True)
         return None
 
 

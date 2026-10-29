@@ -32,6 +32,11 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-stub}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # "openai" = an OpenAI-compatible endpoint (Ollama, vLLM, Groq); "anthropic" = Anthropic's Messages API
+      # (LLM_BASE_URL=https://api.anthropic.com, LLM_MODEL=<a Claude model id>, LLM_API_KEY=<key>).
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      # A brief on a long call can take longer than the 30 s code default.
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
       # DPDP master switch; when false the app sends nothing to any AI endpoint.
       AI_DATA_PROCESSING_ENABLED: ${AI_DATA_PROCESSING_ENABLED:-true}
       # Transcription runs on THIS server only (the `transcription` service below), reached over the
