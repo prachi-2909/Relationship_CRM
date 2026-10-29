@@ -17,4 +17,19 @@ class NativeCallLauncherViewModel @Inject constructor(
     fun arm(callSessionId: Int, phone: String) {
         viewModelScope.launch { callRepository.armNativeCall(callSessionId, phone) }
     }
+
+    /** The call was registered with the server but never placed (permission refused, no dialer to open).
+     * Reports it as not connected so the session is cancelled instead of sitting in Pending as a call that
+     * never happened, and frees the single-flight slot so the next call is not refused. */
+    fun cancel(callSessionId: Int) {
+        viewModelScope.launch {
+            callRepository.completeNativeCall(
+                callId = callSessionId,
+                endedAtIso = java.time.Instant.now().toString(),
+                durationSeconds = 0,
+                connected = false
+            )
+            callRepository.clearArmedNativeCall()
+        }
+    }
 }

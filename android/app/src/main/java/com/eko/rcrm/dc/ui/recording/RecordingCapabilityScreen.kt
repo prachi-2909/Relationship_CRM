@@ -20,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import com.eko.rcrm.dc.ui.common.StatusBadge
 import com.eko.rcrm.dc.ui.common.Tone
 import com.eko.rcrm.dc.ui.theme.Background
 import com.eko.rcrm.dc.ui.theme.MutedForeground
+import kotlinx.coroutines.delay
 
 /** Shows exactly why native-SIM call recording is, or isn't, available on this device and
  * build - every engine the app could use, not just the active one, so a device-compatibility
@@ -58,6 +60,17 @@ fun RecordingCapabilityScreen(
         rows = viewModel.snapshot()
         mode = viewModel.mode()
         readiness = viewModel.readiness()
+        // The quick value above can be stale (a dead ADB link looks alive); this one probes it.
+        viewModel.refreshReadiness { readiness = it; rows = viewModel.snapshot() }
+    }
+
+    // Keep the screen honest on its own: after Developer options / Wireless debugging go off, or right after
+    // pairing completes in the notification, the state changes without any tap here.
+    LaunchedEffect(Unit) {
+        while (true) {
+            refresh()
+            delay(4_000)
+        }
     }
 
     Scaffold(
@@ -171,6 +184,16 @@ private fun TwoWaySetupCard(
                         Button(onClick = onArmOffWifi) { Text("Arm off-Wi-Fi") }
                         TextButton(onClick = onRefresh) { Text("Refresh") }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(text = "Connection lost?", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "If recording stops working (for example after turning Developer options off), this " +
+                            "screen switches to pairing on its own. You can also pair again with a new pairing code.",
+                        style = MaterialTheme.typography.bodySmall, color = MutedForeground
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = onStartPairing) { Text("Pair again with code") }
                 } else {
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(onClick = onRefresh) { Text("Refresh") }

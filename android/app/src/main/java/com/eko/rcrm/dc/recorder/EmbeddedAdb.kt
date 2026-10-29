@@ -34,20 +34,37 @@ object EmbeddedAdb {
         Log.i(TAG, "paired on port $port")
     }
 
-    /** Whether the embedded client currently holds a live ADB connection. */
+    /** Set only by [isLinkAlive] / a successful connect, cleared when a probe fails. The library's own
+     * isConnected just reports that its socket object exists, so it stays true after adbd went away. */
+    @Volatile private var linkVerified = false
+
+    /** Whether the embedded client holds an ADB connection that was last seen working. Cheap, any thread. */
     fun isConnected(context: Context): Boolean =
-        runCatching { AdbConnectionManager.getInstance(context).isConnected }.getOrDefault(false)
+        linkVerified && runCatching { AdbConnectionManager.getInstance(context).isConnected }.getOrDefault(false)
+
+    /** Proves the ADB link works by opening a trivial shell stream under a time bound. A dead link (Developer
+     * options or Wireless debugging turned off, adbd restarted) is dropped so the next connect starts clean and
+     * the UI can offer pairing again. Blocking; off-main. */
+    fun isLinkAlive(context: Context): Boolean {
+        val mgr = AdbConnectionManager.getInstance(context)
+        if (!runCatching { mgr.isConnected }.getOrDefault(false)) { linkVerified = false; return false }
+        val alive = connectBounded("link probe") { mgr.openStream("shell:true").close(); true }
+        linkVerified = alive
+        if (!alive) runCatching { mgr.disconnect() }
+        return alive
+    }
 
     /** Connects if not already: tries the OFF-WIFI loopback first (works without Wi-Fi once armed),
      * then falls back to Wireless Debugging (needs Wi-Fi). Blocking; off-main. */
     fun ensureConnected(context: Context): Boolean {
         val mgr = AdbConnectionManager.getInstance(context)
-        if (runCatching { mgr.isConnected }.getOrDefault(false)) return true
+        if (isLinkAlive(context)) return true
         if (connectLoopback(context)) return true
         return runCatching {
             mgr.autoConnect(context.applicationContext, CONNECT_TIMEOUT_MS)
             mgr.isConnected
         }.onFailure { Log.w(TAG, "Wireless-debugging connect failed: ${it.message}") }.getOrDefault(false)
+            .also { linkVerified = it }
     }
 
     /** Connects to the classic-tcpip loopback listener (127.0.0.1:[LOOPBACK_PORT]). Works with NO
@@ -55,6 +72,7 @@ object EmbeddedAdb {
     private fun connectLoopback(context: Context): Boolean {
         val mgr = AdbConnectionManager.getInstance(context)
         return connectBounded("loopback :$LOOPBACK_PORT") { mgr.connect("127.0.0.1", LOOPBACK_PORT) }
+            .also { if (it) linkVerified = true }
     }
 
     /** Whether off-Wi-Fi recording is armed and reachable right now. */

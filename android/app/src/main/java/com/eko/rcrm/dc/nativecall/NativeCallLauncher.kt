@@ -50,7 +50,15 @@ fun rememberNativeCallLauncher(onPermissionDenied: () -> Unit): (NativeCallReque
                 // calling is verified working end to end.
                 showNativeCallDiagnostic(context, "Call tracking service failed to start", t)
             }
-            context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:${request.phone}")))
+            try {
+                context.startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:${request.phone}")))
+            } catch (t: Throwable) {
+                // The dialer never opened, so no call will happen: stop the tracking service and cancel the
+                // session rather than leave a call that never took place in Pending / History.
+                context.stopService(Intent(context, NativeCallForegroundService::class.java))
+                launcherViewModel.cancel(request.callSessionId)
+                showNativeCallDiagnostic(context, "Could not open the dialer", t)
+            }
         }
     }
 
@@ -66,6 +74,8 @@ fun rememberNativeCallLauncher(onPermissionDenied: () -> Unit): (NativeCallReque
         if (request != null && essentialGranted) {
             placeCall(request)
         } else {
+            // No permission, so no call: cancel the session that was registered when Call was tapped.
+            request?.let { launcherViewModel.cancel(it.callSessionId) }
             onPermissionDenied()
         }
     }

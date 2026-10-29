@@ -30,6 +30,15 @@ object RecorderBackend {
         }
     }
 
+    /** Like [readiness] but proves an embedded-ADB link really works instead of trusting a stale socket, so a
+     * connection lost after Developer options went off reads NEEDS_PAIRING. Blocking; off-main. */
+    fun readinessVerified(context: Context, mode: PrivilegedMode): Readiness = when (mode) {
+        PrivilegedMode.EMBEDDED_ADB ->
+            if (RecorderConnection.isConnected || EmbeddedAdb.isLinkAlive(context)) Readiness.READY
+            else Readiness.NEEDS_PAIRING
+        PrivilegedMode.SHIZUKU -> readiness(context, mode)
+    }
+
     /** Blocks until a usable binder is in [RecorderConnection], or the timeout elapses. */
     fun ensureRunning(context: Context, mode: PrivilegedMode): Boolean {
         if (RecorderConnection.isConnected) return true

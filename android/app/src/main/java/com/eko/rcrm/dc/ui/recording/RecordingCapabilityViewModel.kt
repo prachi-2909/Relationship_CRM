@@ -43,6 +43,14 @@ class RecordingCapabilityViewModel @Inject constructor(
 
     fun readiness(): RecorderBackend.Readiness = RecorderBackend.readiness(context, callRecordingPrefs.privilegedMode)
 
+    /** Re-checks readiness for real (a live ADB probe, off the main thread) and reports it on the main thread. */
+    fun refreshReadiness(onResult: (RecorderBackend.Readiness) -> Unit) {
+        viewModelScope.launch {
+            val mode = callRecordingPrefs.privilegedMode
+            onResult(withContext(Dispatchers.IO) { RecorderBackend.readinessVerified(context, mode) })
+        }
+    }
+
     fun requestShizukuPermission() = ShizukuBackend.requestPermission()
 
     /** Starts the notification-driven pairing: the DC enters the 6-digit code in the notification,
