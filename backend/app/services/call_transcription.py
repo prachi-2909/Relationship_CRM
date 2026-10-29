@@ -260,6 +260,12 @@ def transcribe(audio_ref: str) -> TranscriptResult | None:
             text = (data.get("text") or "").strip()
             if not text:
                 return None
+            # The same guard the in-process path uses: on audio Whisper cannot make out it echoes the seed
+            # prompt or loops one phrase. That is not a transcript - fail it so the DC can type the recap
+            # instead of a brief and commitments being built from junk.
+            if _looks_like_hallucination(text, settings.transcription_prompt):
+                logger.warning("transcription looked like a hallucination (%d chars); discarded", len(text))
+                return None
             return TranscriptResult(
                 text=text,
                 language=data.get("language"),
