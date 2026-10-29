@@ -100,6 +100,42 @@ fun HomeScreen(
         )
     }
 
+    // A new version is on the server: say so up front. "Update" downloads it and hands it to Android's installer
+    // (one confirmation tap there); "Later" leaves the banner on this screen. Not shown over the consent dialog.
+    val update = uiState.updateAvailable
+    if (update != null && !uiState.updateDialogDismissed && !uiState.showRmConsent) {
+        AlertDialog(
+            onDismissRequest = { if (!uiState.isDownloadingUpdate) viewModel.onUpdateDialogLater() },
+            title = { Text("Update available") },
+            text = {
+                Column {
+                    Text("Version ${update.versionName} is ready. Update now?")
+                    if (uiState.isDownloadingUpdate) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(color = Primary, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(text = "Downloading...", modifier = Modifier.padding(start = 12.dp))
+                        }
+                    }
+                    uiState.updateError?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = it, style = MaterialTheme.typography.bodySmall, color = MutedForeground)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::downloadUpdate, enabled = !uiState.isDownloadingUpdate) {
+                    Text("Update")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::onUpdateDialogLater, enabled = !uiState.isDownloadingUpdate) {
+                    Text("Later")
+                }
+            }
+        )
+    }
+
     // One confirmation tap to install, never silent - Android has no silent-install path for a
     // non-Play-Store, non-MDM-enrolled app, so handing off to the system installer is as far as
     // this can go automatically.

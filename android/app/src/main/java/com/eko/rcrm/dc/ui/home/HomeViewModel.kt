@@ -30,6 +30,9 @@ data class HomeUiState(
     val isDownloadingUpdate: Boolean = false,
     val updateError: String? = null,
     val downloadedApkPath: String? = null,
+    // The "Update available" popup is shown once per app start; "Later" (or starting the install) hides it
+    // and the banner on the home screen stays.
+    val updateDialogDismissed: Boolean = false,
     // True when the logged-in user is a Relationship Manager (they get the CSP calling list and
     // the all-call recording consent; a DC gets neither).
     val isRm: Boolean = false,
@@ -143,7 +146,11 @@ class HomeViewModel @Inject constructor(
 
     /** Called once the caller has fired the install intent, so it isn't re-fired on recompose. */
     fun onUpdateInstallLaunched() {
-        _uiState.update { it.copy(downloadedApkPath = null) }
+        _uiState.update { it.copy(downloadedApkPath = null, updateDialogDismissed = true) }
+    }
+
+    fun onUpdateDialogLater() {
+        _uiState.update { it.copy(updateDialogDismissed = true) }
     }
 
     fun onInstallPermissionMissing() {

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +7,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.kapt")
+}
+
+// versionCode / versionName live in android/version.properties; scripts/release-android.ps1 raises them for
+// every release. The app only offers an update when the server's version code is higher than its own.
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
 android {
@@ -15,8 +23,8 @@ android {
         applicationId = "com.eko.rcrm.dc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = (versionProps.getProperty("VERSION_CODE") ?: "1").toInt()
+        versionName = versionProps.getProperty("VERSION_NAME") ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
