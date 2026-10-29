@@ -51,6 +51,27 @@ def _load_audio(audio_ref: str) -> tuple[str, bytes] | None:
 _local_model = None
 
 
+# Whisper has never heard these scheme names, so it spells them by sound. These are the mis-hearings seen in
+# real calls (and listed in the brief prompt), fixed here so they are right even when no LLM is configured to
+# normalise them. Whole words only, and only spellings that are not ordinary words.
+_DOMAIN_TERMS = [
+    # JGBY, JBY, JJBY, JJBUI, JJBOI, PMJJBUI ... (a "B" is required, so "ji" / "jee" are never touched)
+    (r"(?:PM)?(?:JJ?B|JGB)[UO]?[IY]{1,2}s?", "PMJJBY"),
+    (r"PMSB[UO]?[IY]{1,2}", "PMSBY"),                    # PMSBUI, PMSBOI, PMSBI
+    (r"PMJD[UO]?[IY]{1,2}", "PMJDY"),
+    (r"SLIPE|SLI|SLAPS?", "slab"),
+]
+
+
+def normalise_domain_terms(text: str) -> str:
+    """Corrects the known mis-hearings of PMJJBY / PMSBY / PMJDY and 'slab' in a transcript."""
+    import re
+
+    for pattern, correct in _DOMAIN_TERMS:
+        text = re.sub(rf"\b(?:{pattern})\b", correct, text, flags=re.IGNORECASE)
+    return text
+
+
 def _looks_like_hallucination(text: str, prompt: str | None) -> bool:
     """Whisper on silent/garbage audio tends to (a) echo the seed prompt or (b) repeat one short
     phrase many times. Treat both as 'no usable speech' rather than a transcript."""
@@ -232,7 +253,7 @@ def _transcribe_local(audio_ref: str) -> TranscriptResult | None:
         if not sections:
             return None
         return TranscriptResult(
-            text="\n\n".join(sections),
+            text=normalise_domain_terms("\n\n".join(sections)),
             language="hi+en" if hindi and english else ("hi" if hindi else "en"),
             provider=f"local-whisper-{settings.local_whisper_model}",
         )
@@ -297,7 +318,7 @@ def transcribe(audio_ref: str) -> TranscriptResult | None:
                 logger.warning("transcription looked like a hallucination (%d chars); discarded", len(text))
                 return None
             return TranscriptResult(
-                text=text,
+                text=normalise_domain_terms(text),
                 language=data.get("language"),
                 provider=settings.transcription_model,
             )

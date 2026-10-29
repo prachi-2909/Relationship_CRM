@@ -98,6 +98,22 @@ def test_the_denoise_step_can_be_switched_off(monkeypatch):
     assert call_transcription._denoised_upload("clip.ogg", b"RAW") == ("clip.ogg", b"RAW")
 
 
+def test_known_mishearings_of_the_scheme_names_are_corrected():
+    fix = call_transcription.normalise_domain_terms
+    assert fix("there are 6 JGBYs remaining for your slap") == "there are 6 PMJJBY remaining for your slab"
+    assert fix("JJBUI target is 10, PMSBUI is 5, SLI 1") == "PMJJBY target is 10, PMSBY is 5, slab 1"
+    # Already right, or ordinary words, are left alone.
+    assert fix("PMJJBY and PMSBY and APY and PMJDY") == "PMJJBY and PMSBY and APY and PMJDY"
+    assert fix("a slip of paper, the slime, bye, jubilee") == "a slip of paper, the slime, bye, jubilee"
+    assert fix("Haan ji, namaste. Ji sir, jee haan, JI") == "Haan ji, namaste. Ji sir, jee haan, JI"      # common words
+
+
+def test_the_corrected_names_are_what_gets_stored(tmp_path, monkeypatch):
+    ref = _fake_whisper(monkeypatch, tmp_path, "Sir, JGBY ke liye teen remaining hain aur slap pura karna hai.")
+    result = call_transcription.transcribe(ref)
+    assert result is not None and "PMJJBY" in result.text and "slab" in result.text
+
+
 def test_a_real_transcript_from_the_endpoint_is_accepted(tmp_path, monkeypatch):
     ref = _fake_whisper(monkeypatch, tmp_path, "Haan ji, kiosk ka target is mahine pura ho jayega.")
     result = call_transcription.transcribe(ref)
