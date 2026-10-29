@@ -137,6 +137,39 @@ else is published (the backend has no host port; the frontend proxies `/api` to 
 Transcription runs in the `transcription` container (CPU Speaches image; `TRANSCRIPTION_PROVIDER=openai` is set
 in compose). Allow minutes for a long call: `TRANSCRIPTION_TIMEOUT_SECONDS` defaults to 900 in compose.
 
+## Claude Sonnet 5.5 as the LLM (optional)
+
+Without an LLM the AI brief, summary, action points, suggestions and Supervisor answers come back empty or
+templated. This service points all of them at one fixed model, Claude Sonnet 5.5, through the Claude CLI. Speech
+to text is NOT done by Claude (it cannot read audio): it stays on the on-server Whisper.
+
+How it works: the `claude-bridge` compose service (profile `claude`, folder `bridge/`) answers the backend's
+OpenAI-style requests by running `claude -p` with the model fixed. It has no host port, accepts only the shared
+bearer token, and its login is kept in the `claude-auth` volume. It logs timings and sizes, never prompts or
+replies. Everything stays inside this compose project; no host install, no other project touched. Note that the
+call transcripts are then sent to Anthropic, which needs your organisation's approval.
+
+1. In the project's `.env` (`chmod 600`, never committed) add:
+   ```
+   CLAUDE_BRIDGE_TOKEN=<long random value, e.g. from: openssl rand -hex 32>
+   CLAUDE_MODEL=claude-sonnet-5-5
+   LLM_BASE_URL=http://claude-bridge:8080/v1
+   LLM_API_KEY=<the same value as CLAUDE_BRIDGE_TOKEN>
+   LLM_MODEL=claude-sonnet-5-5
+   ```
+2. Build and start it: `docker compose --profile claude up -d --build claude-bridge`
+3. Log in once: `docker compose --profile claude run --rm -it claude-bridge claude`, finish the login it prints
+   (open the link on any browser, paste the code back), then exit. Alternatively set `ANTHROPIC_API_KEY` in `.env`
+   and skip the login.
+4. Check the CLI, login and model: `docker compose --profile claude run --rm claude-bridge node /home/node/server.js --selftest`
+   must print `selftest model=claude-sonnet-5-5 reply="OK"`.
+5. Make the backend pick it up: `docker compose up -d backend`. The brief of the next call is then real.
+   If a brief stays empty, `docker compose logs backend | grep "LLM call failed"` and
+   `docker compose logs claude-bridge` say why (wrong token, not logged in, a flag the CLI version rejects).
+
+To go back: remove the `LLM_*` lines from `.env` and `docker compose up -d backend`; `docker compose --profile claude
+stop claude-bridge` stops the bridge.
+
 ## SQLite under load
 
 The app opens SQLite in **WAL** mode with a 30 s busy timeout (`app/db.py`), so readers and the single writer do not

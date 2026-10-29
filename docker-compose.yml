@@ -77,6 +77,26 @@ services:
       - "8000"
     restart: unless-stopped
 
+  # Optional: the Claude CLI behind an OpenAI-compatible endpoint, so the brief / summary / action points /
+  # Supervisor use ONE fixed model (Claude Sonnet 5.5). Off unless asked for: it only starts with
+  #   docker compose --profile claude up -d --build claude-bridge
+  # It is NOT published to any host port; only the backend can reach it, and only with the shared token.
+  # The CLI's login lives in the claude-auth volume (log in once, see docs/RUNBOOK.md), never in the image.
+  # Audio is not sent here: speech-to-text stays on the on-server Whisper above.
+  claude-bridge:
+    build: ./bridge
+    profiles: ["claude"]
+    environment:
+      BRIDGE_TOKEN: ${CLAUDE_BRIDGE_TOKEN:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
+      # Optional alternative to the interactive login: an Anthropic API key.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - claude-auth:/home/node/.claude
+    expose:
+      - "8080"
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
@@ -93,3 +113,4 @@ services:
 volumes:
   crm-data:
   hf-cache:
+  claude-auth:
