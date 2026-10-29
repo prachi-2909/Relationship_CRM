@@ -40,6 +40,10 @@ services:
       # "openai" = call the OpenAI-compatible service above (the default "local_whisper" would run
       # faster-whisper inside this image, which does not ship it).
       TRANSCRIPTION_PROVIDER: openai
+      # Who places an outgoing call. The Android app dials through the phone's own SIM; with the default
+      # "knowlarity" and no Knowlarity configured the server answers channel "manual" and the app never
+      # opens the dialer.
+      TELEPHONY_PROVIDER: ${TELEPHONY_PROVIDER:-android_native}
       TRANSCRIPTION_BASE_URL: ${TRANSCRIPTION_BASE_URL:-http://transcription:8000/v1}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
       # CPU Whisper runs about real-time, so allow minutes (not the 60 s default) for a long call.

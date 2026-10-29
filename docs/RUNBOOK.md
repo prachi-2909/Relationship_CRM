@@ -39,9 +39,13 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 ## Docker
 
 `docker compose up --build` runs the whole stack: `backend` (runs
-`alembic upgrade head` on every start, then serves on :8010) and `frontend`
-(nginx, :80, proxies `/api` to `backend:8010`). The database lives on the
-`crm-data` named volume, not a bind mount.
+`alembic upgrade head` on every start, then serves on :8010 inside the compose network only), `frontend`
+(nginx, proxies `/api` to `backend:8010`) and `transcription` (self-hosted Whisper, internal only). The
+database lives on the `crm-data` named volume, not a bind mount; the Whisper model cache is in `hf-cache`.
+
+Only the frontend is published, and only on `127.0.0.1:${CRM_HOST_PORT}` (compose refuses to start without it);
+the backend and the transcription service have no host port. For a local run set `CRM_HOST_PORT=8080` and
+`PUBLIC_BASE_PATH=/` in `.env` and open `http://127.0.0.1:8080`. On a shared server see the next section.
 
 - **First run:** `docker compose exec backend python -m app.scripts.create_admin
   --email you@eko.co.in --name "You" --password "..."`.
@@ -60,15 +64,16 @@ Frontend: `cd ../frontend && npm install && npm run dev` (proxies `/api` to :801
 - **Logs:** `docker compose logs -f backend` / `frontend` — stdout is one-line
   JSON per entry; pipe through `jq` for readability.
 - **Health:** both images define a `HEALTHCHECK` hitting `/api/v1/health` (backend)
-  and `/` (frontend) — `docker compose ps` shows current status.
-- **Config:** copy `.env.example` (repo root) to `.env` to set `SECRET_KEY`
+  and `http://127.0.0.1/` (frontend; not `localhost`, which resolves to IPv6 in Alpine while nginx listens on
+  IPv4) — `docker compose ps` shows current status.
+- **Config:** copy `.env.example` (repo root) to `.env` to set `CRM_HOST_PORT`, `PUBLIC_BASE_PATH`, `CORS_ORIGINS`
   and `LLM_*` for the compose stack — separate from `backend/.env`, which only
   applies to a local non-Docker `uvicorn` run.
 - **TLS:** this stack ships no TLS termination — `nginx.conf` only listens on
-  `:80`. The session cookie defaults to `Secure`, so login will not persist
+  `:80` inside the container. The session cookie defaults to `Secure`, so login will not persist
   over plain HTTP on anything other than `http://localhost` (browsers exempt
-  that host specifically). Deploying anywhere reachable by others means
-  putting a TLS-terminating reverse proxy in front; don't set
+  that host specifically; `127.0.0.1` is treated the same). Deploying anywhere reachable by others means
+  putting a TLS-terminating reverse proxy in front (on the shared server the host Nginx does this); don't set
   `SESSION_COOKIE_SECURE=false` to work around this unless the deployment is
   genuinely isolated with no TLS by design.
 - Same migration/schema-change discipline as above — migrations run
