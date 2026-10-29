@@ -167,6 +167,36 @@ def _denoise_to_wav(src_path: str) -> str | None:
             inc.close()
 
 
+def _denoised_upload(filename: str, audio_bytes: bytes) -> tuple[str, bytes]:
+    """The (filename, bytes) to send to a remote Whisper: the call audio after the gentle noise reduction in
+    _denoise_to_wav, or the original untouched if that is switched off or fails for any reason (including PyAV
+    not being installed) - a transcript from the raw audio is always better than none."""
+    import os
+    import tempfile
+
+    if not settings.transcription_denoise_enabled:
+        return filename, audio_bytes
+    src = tempfile.NamedTemporaryFile(suffix=Path(filename).suffix or ".m4a", delete=False)
+    cleaned: str | None = None
+    try:
+        src.write(audio_bytes)
+        src.close()
+        cleaned = _denoise_to_wav(src.name)
+        if cleaned is None:
+            return filename, audio_bytes
+        return Path(filename).stem + ".wav", Path(cleaned).read_bytes()
+    except Exception:  # noqa: BLE001 - never let a cleaning problem stop the transcription
+        logger.warning("audio denoise unavailable; transcribing the original", exc_info=True)
+        return filename, audio_bytes
+    finally:
+        for p in (src.name, cleaned):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+
 def _transcribe_local(audio_ref: str) -> TranscriptResult | None:
     """Open-source Whisper in-process - nothing leaves the server (DPDP-clean).
 
@@ -234,7 +264,7 @@ def transcribe(audio_ref: str) -> TranscriptResult | None:
         loaded = _load_audio(audio_ref)
         if loaded is None:
             return None
-        filename, audio_bytes = loaded
+        filename, audio_bytes = _denoised_upload(*loaded)
 
         import httpx
 

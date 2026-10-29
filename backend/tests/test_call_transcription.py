@@ -20,8 +20,12 @@ def test_kill_switch_blocks_transcription_even_when_configured(tmp_path, monkeyp
     assert call_transcription.transcribe(str(audio)) is None
 
 
+_SENT: list = []        # the (filename, bytes, content type) the fake endpoint last received
+
+
 def _fake_whisper(monkeypatch, tmp_path, text):
     """Points transcribe() at a fake HTTP endpoint that answers with [text]."""
+    _SENT.clear()
     audio = tmp_path / "clip.ogg"
     audio.write_bytes(b"fake-audio")
     monkeypatch.setattr(call_transcription.settings, "transcription_provider", "openai")
@@ -46,10 +50,52 @@ def _fake_whisper(monkeypatch, tmp_path, text):
             return False
 
         def post(self, *a, **k):
+            _SENT.append(k["files"]["file"])
             return _Resp()
 
     monkeypatch.setattr("httpx.Client", _Client)
     return str(audio)
+
+
+def test_the_audio_is_noise_reduced_before_it_is_sent(tmp_path, monkeypatch):
+    ref = _fake_whisper(monkeypatch, tmp_path, "Haan ji, kiosk ka target is mahine pura ho jayega.")
+    made = []
+
+    def _fake_denoise(path):
+        # Like the real one: a fresh temp file per call, which the caller deletes after reading it.
+        out = tmp_path / f"cleaned{len(made)}.wav"
+        out.write_bytes(b"CLEAN")
+        made.append(out)
+        return str(out)
+
+    monkeypatch.setattr(call_transcription.settings, "transcription_denoise_enabled", True)
+    monkeypatch.setattr(call_transcription, "_denoise_to_wav", _fake_denoise)
+    assert call_transcription._denoised_upload("clip.ogg", b"RAW") == ("clip.wav", b"CLEAN")
+    assert call_transcription.transcribe(ref) is not None
+    assert _SENT == [("clip.wav", b"CLEAN", "audio/wav")]       # what actually went to Whisper
+    assert not any(p.exists() for p in made)                    # temp files are cleaned up
+
+
+def test_the_original_audio_is_sent_when_the_denoise_step_fails(monkeypatch):
+    monkeypatch.setattr(call_transcription.settings, "transcription_denoise_enabled", True)
+
+    def _boom(path):
+        raise ImportError("No module named 'av'")      # e.g. PyAV missing from the image
+
+    monkeypatch.setattr(call_transcription, "_denoise_to_wav", _boom)
+    assert call_transcription._denoised_upload("clip.ogg", b"RAW") == ("clip.ogg", b"RAW")
+    monkeypatch.setattr(call_transcription, "_denoise_to_wav", lambda path: None)
+    assert call_transcription._denoised_upload("clip.ogg", b"RAW") == ("clip.ogg", b"RAW")
+
+
+def test_the_denoise_step_can_be_switched_off(monkeypatch):
+    monkeypatch.setattr(call_transcription.settings, "transcription_denoise_enabled", False)
+
+    def _must_not_run(path):
+        raise AssertionError("denoise ran although it is switched off")
+
+    monkeypatch.setattr(call_transcription, "_denoise_to_wav", _must_not_run)
+    assert call_transcription._denoised_upload("clip.ogg", b"RAW") == ("clip.ogg", b"RAW")
 
 
 def test_a_real_transcript_from_the_endpoint_is_accepted(tmp_path, monkeypatch):
