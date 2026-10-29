@@ -46,6 +46,12 @@ services:
       TELEPHONY_PROVIDER: ${TELEPHONY_PROVIDER:-android_native}
       TRANSCRIPTION_BASE_URL: ${TRANSCRIPTION_BASE_URL:-http://transcription:8000/v1}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-Systran/faster-whisper-small}
+      # Tested on a real recorded call with the small model: pinning Hindi made Whisper loop one word, and the
+      # Hinglish seed prompt was echoed back instead of the speech, while English gave a readable transcript.
+      # So the server defaults are English and no prompt. For Hindi-heavy calls try a larger model first
+      # (TRANSCRIPTION_MODEL=Systran/faster-whisper-medium, installed once) and TRANSCRIPTION_LANGUAGE=hi.
+      TRANSCRIPTION_LANGUAGE: ${TRANSCRIPTION_LANGUAGE:-en}
+      TRANSCRIPTION_PROMPT: ${TRANSCRIPTION_PROMPT:-}
       # CPU Whisper runs about real-time, so allow minutes (not the 60 s default) for a long call.
       TRANSCRIPTION_TIMEOUT_SECONDS: ${TRANSCRIPTION_TIMEOUT_SECONDS:-900}
     volumes:
