@@ -36,7 +36,7 @@ from . import audit
 from . import commitments as commitments_svc
 from . import intelligence_feedback as feedback_svc
 from . import media_storage
-from .call_intelligence import rm_retains_recording
+from .call_intelligence import cancel_abandoned_native_calls, rm_retains_recording
 
 logger = logging.getLogger("rcrm.retention")
 settings = get_settings()
@@ -222,6 +222,7 @@ def run_nightly(db: Session, now: datetime | None = None) -> dict:
             logger.exception("retention step %s failed", name)
             summary[name] = "failed"
 
+    step("abandoned_native_calls", lambda: cancel_abandoned_native_calls(db, now))
     step("rm_audio_purged", lambda: purge_expired_rm_audio(db, now))
     step("media_deletions", lambda: retry_pending_media_deletions(db, now))
     step("orphan_files", lambda: sweep_orphan_files(db, now))

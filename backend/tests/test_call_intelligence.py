@@ -938,3 +938,60 @@ def test_the_dcs_own_voice_note_recap_of_a_short_call_is_still_accepted(
         files={"file": ("voicenote.m4a", b"fake-audio-bytes", "audio/mp4")},
     )
     assert resp.status_code == 200      # only a recording of the call itself is subject to the minimum
+
+
+# ---- a call that was registered but never actually placed ----
+
+def _session(db, dc, *, channel, hours_ago, status=CallSessionStatus.INITIATED, ended=False):
+    now = datetime.now(timezone.utc)
+    call = CallSession(
+        dc_user_id=dc.id, direction=Direction.OUTBOUND, phone_ref="9876511111", channel=channel,
+        started_at=now - timedelta(hours=hours_ago), processing_status=status,
+        ended_at=now if ended else None,
+    )
+    db.add(call)
+    db.commit()
+    return call
+
+
+def test_an_in_app_call_that_was_never_reported_is_cancelled_instead_of_sitting_in_pending(db, make_user):
+    dc = make_user(email="dc-abandoned@example.com", role=Role.DC)
+    abandoned = _session(db, dc, channel="android_native", hours_ago=4)
+    in_progress = _session(db, dc, channel="android_native", hours_ago=1)
+    logged_by_hand = _session(db, dc, channel="manual", hours_ago=4)          # not an in-app call
+    reviewed = _session(db, dc, channel="android_native", hours_ago=4, status=CallSessionStatus.REVIEW_REQUIRED, ended=True)
+
+    assert call_svc.cancel_abandoned_native_calls(db) == 1
+    db.commit()
+
+    assert abandoned.processing_status == CallSessionStatus.CANCELLED
+    assert in_progress.processing_status == CallSessionStatus.INITIATED       # still inside the grace period
+    assert logged_by_hand.processing_status == CallSessionStatus.INITIATED    # other channels are left alone
+    assert reviewed.processing_status == CallSessionStatus.REVIEW_REQUIRED    # a reported call is never touched
+
+
+def test_the_nightly_retention_run_cancels_abandoned_in_app_calls(db, make_user):
+    from app.services import retention
+
+    dc = make_user(email="dc-abandoned-nightly@example.com", role=Role.DC)
+    abandoned = _session(db, dc, channel="android_native", hours_ago=5)
+
+    summary = retention.run_nightly(db)
+
+    assert summary["abandoned_native_calls"] == 1
+    assert abandoned.processing_status == CallSessionStatus.CANCELLED
+
+
+def test_a_late_report_still_revives_a_call_that_was_cancelled_as_abandoned(db, make_user):
+    dc = make_user(email="dc-late-report@example.com", role=Role.DC)
+    call = _session(db, dc, channel="android_native", hours_ago=4)
+    call_svc.cancel_abandoned_native_calls(db)
+    db.commit()
+    assert call.processing_status == CallSessionStatus.CANCELLED
+
+    call_svc.complete_native_call(
+        db, call, actor=dc, ended_at=datetime.now(timezone.utc), duration_seconds=240, connected=True,
+    )
+    db.commit()
+
+    assert call.processing_status == CallSessionStatus.REVIEW_REQUIRED          # a real long call is not lost

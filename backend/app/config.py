@@ -151,6 +151,9 @@ class Settings(BaseSettings):
     # that is not configurable. A call that is never logged keeps its audio at most this
     # many days, after which the nightly job deletes it anyway.
     unconfirmed_call_audio_retention_days: int = 7
+    # An in-app call whose session was created but never reported back (the dialer never opened, the app was
+    # killed, a permission popup was lost) is cancelled after this long, so it does not sit in Pending forever.
+    abandoned_native_call_hours: int = 3
     # RM <-> CSP call RECORDINGS (the audio only) are deleted this many days after they were stored.
     # Transcripts and AI briefs are NOT touched by this - see docs/data-retention.md.
     rm_recording_retention_days: int = 60

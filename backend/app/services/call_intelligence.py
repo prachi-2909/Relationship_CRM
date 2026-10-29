@@ -938,6 +938,36 @@ def _discard_call_artifacts(db: Session, call: CallSession, *, actor_id: int | N
     return discarded
 
 
+def cancel_abandoned_native_calls(db: Session, now: datetime | None = None) -> int:
+    """An in-app (android_native) call is registered with the server the moment the DC taps Call, and the app
+    reports back only once the call has ended. If the dialer never opened, the app was killed, or a permission
+    popup was lost, that report never comes and the session sits in Pending / History as if a call happened.
+    Anything still INITIATED with no end time and no audio after abandoned_native_call_hours is cancelled.
+    Other channels are untouched (a Knowlarity / manual call is logged by hand later). Returns the count."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=settings.abandoned_native_call_hours)
+    stale = db.scalars(
+        select(CallSession).where(
+            CallSession.channel == "android_native",
+            CallSession.processing_status == CallSessionStatus.INITIATED,
+            CallSession.ended_at.is_(None),
+            CallSession.started_at < cutoff,
+        )
+    ).all()
+    cancelled = 0
+    for call in stale:
+        if call.voice_note is not None or call.recording is not None:
+            continue
+        call.processing_status = CallSessionStatus.CANCELLED
+        audit.record(
+            db, action="call.native_call_abandoned", entity_type="call_session", entity_id=call.id,
+            actor_id=None, after={"hours": settings.abandoned_native_call_hours},
+        )
+        cancelled += 1
+    db.flush()
+    return cancelled
+
+
 def purge_stale_call_audio(db: Session, now: datetime | None = None) -> int:
     """Nightly retention sweep for calls that were never logged into the CRM:
     their audio is deleted once older than unconfirmed_call_audio_retention_days,
