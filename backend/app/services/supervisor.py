@@ -30,7 +30,7 @@ from ..models.official import Official
 from ..models.relationship import Relationship
 from ..models.user import Role, User
 from . import brief as brief_svc
-from . import knowledge, llm, portfolio, precall
+from . import knowledge, llm, portfolio, precall, tara_check
 
 _MAX_TARGETED = 3  # more named people than this -> treat as a portfolio question
 
@@ -115,6 +115,10 @@ def _csp_context(db: Session, csp: Csp, actor: User) -> dict:
         "csp_committed": cs(oc["theirs"]),
         "suggested_commitments_awaiting_rm_review": cs(p.get("proposed_commitments") or []),
         "slab_status": p.get("slab_status") or [],
+        "relationship_score": {
+            k: (p.get("score") or {}).get(k)
+            for k in ("overall", "relationship", "business", "band", "tara_included", "reasons")
+        },
         "memory": [m["fact"] for m in (p.get("memory") or [])][:10],
         "talking_points": p.get("talking_points") or [],
     }
@@ -232,6 +236,14 @@ _SYSTEM_PROMPT = (
 )
 
 
+_SCORE_RULE = (
+    "\n\nA CSP entry may carry relationship_score: plain arithmetic on the CRM's own records (0 to 100), "
+    "with overall, relationship (contact, follow-through, does the CSP pick up) and business (from TARA) parts, "
+    "a band, and reasons in words. Quote its numbers and reasons exactly; never recompute them. business is null "
+    "and tara_included is false when TARA's figures were not part of it: say so rather than guessing."
+)
+
+
 def _synthesize(
     question: str,
     scope: str,
@@ -245,8 +257,11 @@ def _synthesize(
             {"official_name": c.get("official_name"), "source_type": c["source_type"], "text": c["text"]}
             for c in chunks
         ]
+    has_tara = any(isinstance(c, dict) and c.get("tara_source_of_truth") for c in context)
     text = llm.chat(
-        _SYSTEM_PROMPT,
+        _SYSTEM_PROMPT
+        + (tara_check.SUPERVISOR_RULE if has_tara else "")
+        + (_SCORE_RULE if any(isinstance(c, dict) and c.get("relationship_score") for c in context) else ""),
         f"Question: {question}\n\nData:\n{json.dumps(payload, default=str)}",
         history=history,
     )
@@ -425,6 +440,15 @@ def answer(
             {"relationship_id": r["relationship_id"], "official_name": r["official_name"]}
             for r in rows
         ]
+
+    # TARA (through Kiosk KAI) is the source of truth for a CSP's figures: attach its live numbers to each CSP entry.
+    # The CSP code comes from the entries above, which were already limited to what this user may see.
+    if scope == "targeted":
+        for item in context:
+            if item.get("subject_type") == "csp" and item.get("csp_code"):
+                facts = tara_check.gather(question, item["csp_code"])
+                if facts:
+                    item["tara_source_of_truth"] = facts
 
     # RAG only for the targeted scope (a handful of known relationships) -
     # portfolio scope is already deliberately lean and a full-scan of every

@@ -24,6 +24,7 @@ from ..models.csp import Csp
 from ..models.intelligence_feedback import SUBJECT_CSP, TARGET_TALKING_POINT
 from ..models.user import User
 from . import commitments as commitments_svc
+from . import csp_scoring
 from . import intelligence_feedback as feedback_svc
 
 settings = get_settings()
@@ -156,6 +157,8 @@ def build_for_csp(db: Session, csp: Csp, user: User | None = None) -> dict:
         # AI suggestions awaiting the RM's accept/dismiss - deliberately NOT part of talking points.
         "proposed_commitments": proposed,
         "slab_status": slab_status,
+        # Relationship / business / overall score with a reason for every signal (services/csp_scoring.py).
+        "score": csp_scoring.score_csp(db, csp),
         # What the RM told the CSP last time: where they stand, why, and what it should be.
         "performance": performance,
         "memory": memory[:20],

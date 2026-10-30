@@ -35,6 +35,8 @@ services:
       # "openai" = an OpenAI-compatible endpoint (Ollama, vLLM, Groq); "anthropic" = Anthropic's Messages API
       # (LLM_BASE_URL=https://api.anthropic.com, LLM_MODEL=<a Claude model id>, LLM_API_KEY=<key>).
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      # Kiosk KAI (TARA's CSP figures). The CRM's OWN key, not a person's; empty = off.
+      KIOSK_KAI_APP_KEY: ${KIOSK_KAI_APP_KEY:-}
       # A brief on a long call can take longer than the 30 s code default.
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
       # DPDP master switch; when false the app sends nothing to any AI endpoint.

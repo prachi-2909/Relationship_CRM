@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Ollama, vLLM, Groq...) or "anthropic" (Anthropic's Messages API, e.g. https://api.anthropic.com).
     llm_provider: str = "openai"
     llm_max_tokens: int = 4096  # reply cap; the Anthropic API requires one
+    # Kiosk KAI: a read-only MCP server over TARA / AutoGMap / the Kiosk form. The CRM signs in with ITS OWN key
+    # (never a person's); without it nothing is called and the CRM works from its own data (services/kiosk_kai.py).
+    kiosk_kai_url: str = "https://indev.eko.in/kiosk-kai/mcp"
+    kiosk_kai_app_key: str | None = None
 
     # DPDP master switch. When False, NO audio or text is sent to ANY AI endpoint - transcription,
     # LLM and embeddings all fall back to their offline stubs, regardless of the *_base_url values.
