@@ -111,7 +111,7 @@ def test_the_business_part_uses_tara_when_it_is_mapped(db, make_user, monkeypatc
     rm = _rm(make_user, "rm-score-biz@example.com")
     csp = _csp(db, rm)
     _call(db, rm, csp, days_ago=0)
-    monkeypatch.setattr(csp_scoring, "_tara_performance", lambda tara: (40.0, "PMJJBY at 40% of target."))
+    monkeypatch.setattr(csp_scoring, "_tara_performance", lambda tara, today: (40.0, "PMJJBY at 40% of target."))
     monkeypatch.setattr(csp_scoring, "_tara_trend", lambda tara: (80.0, "Transactions up on last month."))
 
     s = csp_scoring.score_csp(db, csp, now=NOW, tara=[{"tool": "x"}])

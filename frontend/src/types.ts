@@ -1042,6 +1042,98 @@ export interface RmPerformanceReview {
   from: string;
 }
 
+/** The CSP relationship score (services/csp_scoring.py): arithmetic on records, with a reason for every signal. */
+export interface CspScore {
+  version: string;
+  overall: number | null;
+  relationship: number | null;
+  /** From TARA; null while TARA's figures are not part of the score. */
+  business: number | null;
+  band: string | null;
+  tara_included: boolean;
+  components: Record<string, { value: number | null; weight: number; note: string | null }>;
+  reasons: string[];
+}
+
+export interface TaraSlabScheme {
+  scheme: string;
+  have: number | null;
+  threshold: number | null;
+  more: number | null;
+}
+
+/** TARA's figures for one CSP, copied as TARA sends them (services/tara_panel.py). */
+export type TaraPanel =
+  | { available: false }
+  | {
+      available: true;
+      source: string;
+      as_of: string | null;
+      month: string | null;
+      slab: {
+        rule: string | null;
+        reached: string | null;
+        reached_in_calling_sheet: string | null;
+        target_in_calling_sheet: string | null;
+        basis: string;
+        next: {
+          name: string | null;
+          incentive_inr: number | null;
+          already: boolean | null;
+          schemes: TaraSlabScheme[];
+          closest_three: string[];
+          extra_total: number | null;
+        } | null;
+      } | null;
+      products: {
+        code: string;
+        name: string;
+        achieved: number | null;
+        achieved_basis: string | null;
+        sbi_target: number | null;
+        tara_goal: number | null;
+        agent_target: number | null;
+        progress: number | null;
+        progress_pct: number | null;
+        pace_status: string | null;
+      }[];
+      transactions: {
+        count: number | null;
+        gtv_inr: number | null;
+        days_with_data: number | null;
+        last_day_with_data: string | null;
+      } | null;
+      earnings: {
+        month: string | null;
+        value_inr: number | null;
+        usual_inr: number | null;
+        growth_pct: number | null;
+        status: string | null;
+        rank_in_district: number | null;
+        of_in_district: number | null;
+        latest_posted_commission: { label: string | null; inr: number | null } | null;
+        month_target_inr: number | null;
+      } | null;
+      activity: {
+        login_days_this_month: number | null;
+        days_without_activity: number | null;
+        last_login_date: string | null;
+        terminal_status: string | null;
+        matm_status: string | null;
+        passbook_printer_status: string | null;
+        gps_dongle_status: string | null;
+      } | null;
+      opportunities: { lever: string | null; monthly_inr: number | null; detail: unknown }[];
+      call_priority: {
+        priority: string | null;
+        rank: number | null;
+        daily_target_txns: number | null;
+        daily_target_inr: number | null;
+      } | null;
+      balance: { total_accounts: number | null; deposit_for_higher_slab_inr: number | null } | null;
+      caveats: string[];
+    };
+
 export interface PreCallResponse {
   csp_id: string;
   name: string;
@@ -1067,6 +1159,9 @@ export interface PreCallResponse {
   /** AI suggestions from call briefs, awaiting the RM's accept / dismiss. Not obligations yet. */
   proposed_commitments: Commitment[];
   slab_status: string[];
+  score: CspScore;
+  /** null when TARA is not switched on for this CRM. */
+  tara: TaraPanel | null;
   /** What the RM told the CSP last time: where they stand, why, and what it should be. */
   performance: RmPerformanceReview | null;
   memory: { fact: string; kind: string; from: string }[];
@@ -1142,6 +1237,45 @@ export interface DashboardOverview {
   calls_by_direction: NameValue[];
   calls_timeline: { date: string; value: number }[];
   upcoming_birthdays: UpcomingBirthday[];
+}
+
+export interface CommandDashboard {
+  scope: { role: string; rm: { id: number; name: string } | null; dc: { id: number; name: string } | null; can_filter: boolean; generated_at: string };
+  filters: { rms: { id: number; name: string }[]; dcs: { id: number; name: string }[] } | null;
+  csp: {
+    active: number; inactive: number; not_called_30d: number; never_called: number;
+    to_call: {
+      id: number; csp_id: string; name: string; rm_name: string | null; branch: string | null; mobile: string | null;
+      last_call_at: string | null; days_since_last_call: number | null; overdue_commitments: number;
+    }[];
+  } | null;
+  officials: {
+    total: number; with_relationship: number; without_relationship: number | null; avg_score: number | null;
+    by_band: NameValue[]; by_level: NameValue[];
+    needs_attention: {
+      official_id: number; relationship_id: number; name: string | null; level: string | null; score: number;
+      band: string; dc: string | null; days_since_contact: number | null;
+    }[];
+  } | null;
+  calls: {
+    total: number; last_7d: number; last_30d: number; awaiting_review: number;
+    timeline: { date: string; rm: number; dc: number }[];
+    recent: { id: number; when: string | null; by: string; role: string; with: string | null; kind: string; direction: string | null; seconds: number | null; status: string }[];
+  };
+  work: {
+    csp_commitments_open: number; csp_commitments_overdue: number;
+    official_commitments_open: number; official_commitments_overdue: number; followups_overdue: number;
+  };
+  rms: {
+    id: number; name: string; csps: number; calls_7d: number; calls_30d: number; connect_rate_30d: number | null;
+    last_call_at: string | null; days_since_last_call: number | null; csps_not_called_30d: number;
+    commitments_open: number; commitments_overdue: number;
+  }[] | null;
+  dcs: {
+    id: number; name: string; officials: number; avg_relationship: number | null; at_risk: number;
+    not_contacted_30d: number; calls_30d: number; last_call_at: string | null; days_since_last_call: number | null;
+    followups_overdue: number;
+  }[] | null;
 }
 
 export interface OfficialIntelligence {

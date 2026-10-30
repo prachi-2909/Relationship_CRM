@@ -182,11 +182,31 @@ def _llm_draft(facts: dict) -> dict | None:
     }
 
 
-def personalize(db: Session, csp: Csp) -> dict:
+_draft_cache: dict[tuple, dict] = {}
+_DRAFT_CACHE_MAX = 2000
+
+
+def personalize(db: Session, csp: Csp, *, use_llm: bool = True) -> dict:
     """One CSP's bilingual, personalised birthday draft: {subject, message, generated_by}. Uses the
-    LLM when configured, else a safe deterministic template - both from the same real facts."""
+    LLM when configured, else a safe deterministic template - both from the same real facts.
+
+    A draft made by the LLM is remembered (per CSP and facts), so the same wish is not written twice and the
+    preview shows exactly what was or will be sent. `use_llm=False` is for the pages that only LIST drafts: they
+    show a remembered LLM draft if there is one and the template otherwise, and never wait on the model (a list of
+    dozens of CSPs, each needing a model call of many seconds, otherwise ends in a gateway time-out)."""
     facts = _facts(db, csp)
-    return _llm_draft(facts) or _deterministic(facts)
+    key = (csp.id, json.dumps(facts, sort_keys=True, default=str, ensure_ascii=False))
+    cached = _draft_cache.get(key)
+    if cached is not None:
+        return dict(cached)
+    if use_llm:
+        draft = _llm_draft(facts)
+        if draft:
+            if len(_draft_cache) >= _DRAFT_CACHE_MAX:
+                _draft_cache.clear()
+            _draft_cache[key] = draft
+            return dict(draft)
+    return _deterministic(facts)
 
 
 def todays_birthday_csps(db: Session, today: date | None = None) -> list[Csp]:
@@ -259,7 +279,7 @@ def send_birthday_wishes(db: Session, today: date | None = None, dry_run: bool =
             "would_send": len(recipients),
             "drafts": [
                 {"csp_id": c.csp_id, "name": c.name, "email": c.email, "rm_name": c.rm_name,
-                 **personalize(db, c)}
+                 **personalize(db, c, use_llm=False)}
                 for c in recipients
             ],
         }

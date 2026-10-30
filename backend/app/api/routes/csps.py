@@ -283,7 +283,7 @@ def birthday_wishes_preview(db: Session = Depends(get_db), actor: User = Depends
             "id": csp.id, "csp_id": csp.csp_id, "name": csp.name, "email": csp.email,
             "rm_name": csp.rm_name, "in_days": in_days,
             "already_sent": csp.last_birthday_wish_on == today,
-            **birthdays.personalize(db, csp),
+            **birthdays.personalize(db, csp, use_llm=False),
         }
 
     # Include already-wished CSPs too (shown as "Sent" in the UI) so the day's list stays complete.
@@ -319,7 +319,7 @@ def birthday_wishes_sent(
     for c in rows:
         if is_rm and c.rm_user_id != actor.id:
             continue
-        draft = birthdays.personalize(db, c)
+        draft = birthdays.personalize(db, c, use_llm=False)
         items.append({
             "csp_id": c.csp_id, "name": c.name, "email": c.email, "rm_name": c.rm_name,
             "sent_on": c.last_birthday_wish_on.isoformat(),

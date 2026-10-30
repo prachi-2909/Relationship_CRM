@@ -56,10 +56,10 @@ def _post(client, body: dict, session: str | None = None):
     return resp.headers.get("mcp-session-id") or session, (json.loads(text) if text.strip() else None)
 
 
-def _call(tool: str, arguments: dict) -> dict:
+def _call(tool: str, arguments: dict, timeout: float) -> dict:
     import httpx
 
-    with httpx.Client(timeout=TIMEOUT) as client:
+    with httpx.Client(timeout=timeout) as client:
         session, init = _post(client, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
             "protocolVersion": PROTOCOL, "capabilities": {},
             "clientInfo": {"name": "sbi-relationship-crm", "version": "1"}}})
@@ -78,17 +78,17 @@ def _call(tool: str, arguments: dict) -> dict:
     return body
 
 
-def call(tool: str, **arguments) -> dict | None:
+def call(tool: str, _timeout: float | None = None, **arguments) -> dict | None:
     """One tool's answer, {"data", "source", "as_of", "caveats", ...}, or None: no key, or Kiosk KAI did not answer.
-    Kept for CACHE_MINUTES."""
-    if not configured() or not settings.ai_data_processing_enabled:
+    Kept for CACHE_MINUTES. `_timeout` is how long to wait for this call (a page that must stay quick passes less)."""
+    if not configured():
         return None
     cache_key = (tool, json.dumps(arguments, sort_keys=True))
     hit = _cache.get(cache_key)
     if hit and hit[0] > time.monotonic():
         return hit[1]
     try:
-        body = _call(tool, arguments)
+        body = _call(tool, arguments, _timeout or TIMEOUT)
     except Exception as exc:  # noqa: BLE001 - never let a Kiosk KAI problem break a CRM page
         logger.warning("kiosk_kai event=CALL_FAILED tool=%s error=%s: %s", tool, type(exc).__name__, str(exc)[:200])
         body = None

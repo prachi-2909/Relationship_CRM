@@ -1,19 +1,27 @@
 package com.eko.rcrm.dc.data.repository
 
 import com.eko.rcrm.dc.data.remote.dto.CommitmentDto
+import com.eko.rcrm.dc.data.remote.dto.CspScoreDto
 import com.eko.rcrm.dc.data.remote.dto.OfficialBriefingDto
 import com.eko.rcrm.dc.data.remote.dto.PerformanceDto
 import com.eko.rcrm.dc.data.remote.dto.PreCallDto
 import com.eko.rcrm.dc.data.remote.dto.SuggestionItemDto
+import com.eko.rcrm.dc.data.remote.dto.TaraPanelDto
 import com.eko.rcrm.dc.domain.model.BriefingFollowup
 import com.eko.rcrm.dc.domain.model.BriefingInteraction
 import com.eko.rcrm.dc.domain.model.Commitment
+import com.eko.rcrm.dc.domain.model.CspScore
 import com.eko.rcrm.dc.domain.model.DuplicateOf
 import com.eko.rcrm.dc.domain.model.OfficialBriefing
 import com.eko.rcrm.dc.domain.model.PerformanceReview
 import com.eko.rcrm.dc.domain.model.PreCall
 import com.eko.rcrm.dc.domain.model.PreCallLastCall
 import com.eko.rcrm.dc.domain.model.Suggestion
+import com.eko.rcrm.dc.domain.model.TaraPanel
+import com.eko.rcrm.dc.domain.model.TaraSlab
+import com.eko.rcrm.dc.domain.model.TaraProduct
+import com.eko.rcrm.dc.domain.model.TaraSlabNext
+import com.eko.rcrm.dc.domain.model.TaraSlabScheme
 
 // Shared by the CSP and SBI-official repositories: one place turns the briefing JSON into domain models.
 
@@ -42,6 +50,56 @@ private fun PerformanceDto.toDomain() = PerformanceReview(
     fromIso = from
 )
 
+private fun CspScoreDto.toDomain(): CspScore? = overall?.let {
+    CspScore(
+        overall = it, relationship = relationship, business = business, band = band,
+        taraIncluded = tara_included, reasons = reasons
+    )
+}
+
+private fun TaraPanelDto.toDomain() = TaraPanel(
+    available = available,
+    asOf = as_of,
+    month = month,
+    slab = slab?.let { s ->
+        TaraSlab(
+            reached = s.reached ?: s.reached_in_calling_sheet,
+            target = s.target_in_calling_sheet,
+            basis = s.basis,
+            rule = s.rule,
+            next = s.next?.let { n ->
+                TaraSlabNext(
+                    name = n.name,
+                    incentiveInr = n.incentive_inr,
+                    schemes = n.schemes.map { TaraSlabScheme(it.scheme, it.have, it.threshold, it.more) },
+                    closestThree = n.closest_three,
+                    extraTotal = n.extra_total
+                )
+            }
+        )
+    },
+    products = products.map {
+        TaraProduct(it.name, it.achieved, it.sbi_target, it.tara_goal, it.agent_target, it.progress, it.pace_status)
+    },
+    transactionsCount = transactions?.count,
+    transactionsValueInr = transactions?.gtv_inr,
+    lastDayWithData = transactions?.last_day_with_data,
+    earningsMonth = earnings?.month,
+    earnedInr = earnings?.value_inr,
+    usualInr = earnings?.usual_inr,
+    growthPct = earnings?.growth_pct,
+    earningsStatus = earnings?.status,
+    rankInDistrict = earnings?.rank_in_district,
+    ofInDistrict = earnings?.of_in_district,
+    lastLoginDate = activity?.last_login_date,
+    daysWithoutActivity = activity?.days_without_activity,
+    terminalStatus = activity?.terminal_status,
+    matmStatus = activity?.matm_status,
+    passbookPrinterStatus = activity?.passbook_printer_status,
+    gpsDongleStatus = activity?.gps_dongle_status,
+    caveats = caveats
+)
+
 internal fun PreCallDto.toDomain() = PreCall(
     cspId = csp_id,
     name = name,
@@ -63,6 +121,8 @@ internal fun PreCallDto.toDomain() = PreCall(
     theyCommitted = open_commitments.theirs.map { it.toDomain() },
     suggested = proposed_commitments.map { it.toDomain() },
     slabStatus = slab_status,
+    score = score?.toDomain(),
+    tara = tara?.toDomain(),
     performance = performance?.takeIf { it.what.isNotEmpty() || it.why.isNotEmpty() || it.should_be.isNotEmpty() }
         ?.toDomain(),
     memory = memory.map { it.fact },

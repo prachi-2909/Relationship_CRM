@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from ...models.relationship import Relationship, RiskLevel
 from ...models.task import Task, TaskStatus
 from ...models.user import Role, User
 from ...security.deps import get_current_user
+from ...services import command_dashboard
 from ...services.scoring import band
 
 settings = get_settings()
@@ -149,41 +150,60 @@ def _days_until_birthday(dob: date, today: date) -> int:
     return (nxt - today).days
 
 
+@router.get("/dashboard/command")
+def dashboard_command(
+    rm_id: int | None = Query(default=None),
+    dc_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """The dashboard for whoever asks: everything for an admin (narrowed by rm_id / dc_id), an RM's own CSPs and
+    calls, a DC's own SBI officials and calls. See services/command_dashboard.py."""
+    return command_dashboard.build(db, user, rm_id=rm_id, dc_id=dc_id)
+
+
 @router.get("/dashboard/overview")
 def dashboard_overview(
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """CRM-tailored roll-up: CSP (Kiosk Operator) network, the RMs who run it, call activity and
     upcoming birthdays - the figures this CRM actually runs on, shaped for an interactive dashboard."""
     active = CspStatus.ACTIVE
+    # An RM sees their own CSPs and calls only, never the whole network's figures.
+    rm_only = user.role == Role.RELATIONSHIP_MANAGER
+    csp_where = [Csp.status == active] + ([Csp.rm_user_id == user.id] if rm_only else [])
+    call_where = [CallSession.dc_user_id == user.id] if rm_only else []
 
-    active_csps = db.scalar(select(func.count()).select_from(Csp).where(Csp.status == active)) or 0
+    active_csps = db.scalar(select(func.count()).select_from(Csp).where(*csp_where)) or 0
     rm_count = db.scalar(select(func.count()).select_from(User).where(User.role == Role.RELATIONSHIP_MANAGER)) or 0
     officials = db.scalar(
         select(func.count()).select_from(Official).where(Official.status == OfficialStatus.ACTIVE)
     ) or 0
-    calls_total = db.scalar(select(func.count()).select_from(CallSession)) or 0
-    recordings = db.scalar(select(func.count()).select_from(CallVoiceNote)) or 0
+    calls_total = db.scalar(select(func.count()).select_from(CallSession).where(*call_where)) or 0
+    recordings = db.scalar(
+        select(func.count()).select_from(CallVoiceNote)
+        .join(CallSession, CallSession.id == CallVoiceNote.call_session_id).where(*call_where)
+    ) or 0
 
     csps_by_rm = [
         {"name": r[0], "value": r[1]}
         for r in db.execute(
-            select(Csp.rm_name, func.count()).where(Csp.status == active)
+            select(Csp.rm_name, func.count()).where(*csp_where)
             .group_by(Csp.rm_name).order_by(func.count().desc())
         ).all()
     ]
     csps_by_category = [
         {"name": r[0] or "Uncategorised", "value": r[1]}
         for r in db.execute(
-            select(Csp.category, func.count()).where(Csp.status == active)
+            select(Csp.category, func.count()).where(*csp_where)
             .group_by(Csp.category).order_by(func.count().desc())
         ).all()
     ]
     csps_by_state = [
         {"name": r[0] or "Unknown", "value": r[1]}
         for r in db.execute(
-            select(Csp.state, func.count()).where(Csp.status == active)
+            select(Csp.state, func.count()).where(*csp_where)
             .group_by(Csp.state).order_by(func.count().desc()).limit(8)
         ).all()
     ]
@@ -192,14 +212,14 @@ def dashboard_overview(
         {"name": r[0], "value": r[1]}
         for r in db.execute(
             select(User.name, func.count()).join(CallSession, CallSession.dc_user_id == User.id)
-            .where(User.role == Role.RELATIONSHIP_MANAGER)
+            .where(User.role == Role.RELATIONSHIP_MANAGER, *call_where)
             .group_by(User.name).order_by(func.count().desc())
         ).all()
     ]
     calls_by_direction = [
         {"name": (r[0] or "unknown").title(), "value": r[1]}
         for r in db.execute(
-            select(CallSession.direction, func.count()).group_by(CallSession.direction)
+            select(CallSession.direction, func.count()).where(*call_where).group_by(CallSession.direction)
         ).all()
     ]
 
@@ -208,7 +228,7 @@ def dashboard_overview(
     start = today - timedelta(days=13)
     raw = db.execute(
         select(func.date(CallSession.started_at), func.count())
-        .where(func.date(CallSession.started_at) >= start.isoformat())
+        .where(func.date(CallSession.started_at) >= start.isoformat(), *call_where)
         .group_by(func.date(CallSession.started_at))
     ).all()
     by_day = {str(r[0]): r[1] for r in raw}
@@ -220,7 +240,7 @@ def dashboard_overview(
     # Upcoming CSP birthdays in the next 30 days.
     upcoming = []
     for c in db.scalars(
-        select(Csp).where(Csp.status == active).where(Csp.date_of_birth.is_not(None))
+        select(Csp).where(*csp_where).where(Csp.date_of_birth.is_not(None))
     ).all():
         d = _days_until_birthday(c.date_of_birth, today)
         if d <= 30:

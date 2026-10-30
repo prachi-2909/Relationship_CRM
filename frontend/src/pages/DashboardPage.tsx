@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { CommandDashboardView } from "../components/CommandDashboard";
 import { Button, Card, inputClass, PageHeader, SectionLabel } from "../components/ui";
 import { ArrowRightIcon, CakeIcon, MailIcon } from "../components/sectionUi";
 import { api, ApiError } from "../lib/api";
@@ -53,6 +54,8 @@ export function DashboardPage() {
         title="Dashboard"
         description="Your CSP network at a glance — operators, the RMs who run them, call activity and whose birthday is next. Click any figure or bar to drill in."
       />
+
+      <CommandDashboardView />
 
       {isPending && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

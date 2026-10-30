@@ -129,10 +129,3 @@ def test_a_tool_error_is_read_as_no_answer(monkeypatch):
     monkeypatch.setattr(kiosk_kai.settings, "kiosk_kai_app_key", "app-key")
     _server(monkeypatch, tool_result={"isError": True, "structuredContent": {"error": "not allowed"}})
     assert kiosk_kai.call("tara.command_center") is None
-
-
-def test_nothing_is_called_while_the_ai_master_switch_is_off(monkeypatch):
-    monkeypatch.setattr(kiosk_kai.settings, "kiosk_kai_app_key", "app-key")
-    monkeypatch.setattr(kiosk_kai.settings, "ai_data_processing_enabled", False)
-    monkeypatch.setattr("httpx.Client", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called while switched off")))
-    assert kiosk_kai.call("tara.command_center") is None

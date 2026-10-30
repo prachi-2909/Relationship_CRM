@@ -24,7 +24,7 @@ from ..models.csp import Csp
 from ..models.intelligence_feedback import SUBJECT_CSP, TARGET_TALKING_POINT
 from ..models.user import User
 from . import commitments as commitments_svc
-from . import csp_scoring
+from . import csp_scoring, tara_check
 from . import intelligence_feedback as feedback_svc
 
 settings = get_settings()
@@ -140,6 +140,8 @@ def build_for_csp(db: Session, csp: Csp, user: User | None = None) -> dict:
         db, user.id if user is not None else None, SUBJECT_CSP, csp.id, _raw_items(g)
     )
 
+    tara_panel, tara_perf = tara_check.panel(csp.csp_id)
+
     return {
         "csp_id": csp.csp_id,
         "name": csp.name,
@@ -158,7 +160,9 @@ def build_for_csp(db: Session, csp: Csp, user: User | None = None) -> dict:
         "proposed_commitments": proposed,
         "slab_status": slab_status,
         # Relationship / business / overall score with a reason for every signal (services/csp_scoring.py).
-        "score": csp_scoring.score_csp(db, csp),
+        "score": csp_scoring.score_csp(db, csp, tara=tara_perf),
+        # TARA's figures for this CSP (None when TARA is not switched on): services/tara_panel.py.
+        "tara": tara_panel,
         # What the RM told the CSP last time: where they stand, why, and what it should be.
         "performance": performance,
         "memory": memory[:20],

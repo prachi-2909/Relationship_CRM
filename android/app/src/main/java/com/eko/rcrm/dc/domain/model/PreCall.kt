@@ -46,6 +46,69 @@ data class PreCallLastCall(
     val highlights: List<String>
 )
 
+data class CspScore(
+    val overall: Int,
+    val relationship: Int?,
+    val business: Int?,
+    val band: String?,
+    val taraIncluded: Boolean,
+    val reasons: List<String>
+)
+
+data class TaraSlabScheme(val scheme: String, val have: Double?, val threshold: Double?, val more: Double?)
+
+data class TaraSlabNext(
+    val name: String?,
+    val incentiveInr: Double?,
+    val schemes: List<TaraSlabScheme>,
+    val closestThree: List<String>,
+    val extraTotal: Double?
+)
+
+data class TaraSlab(
+    val reached: String?,
+    val target: String?,
+    val basis: String,
+    val rule: String?,
+    val next: TaraSlabNext?
+)
+
+data class TaraProduct(
+    val name: String,
+    val achieved: Double?,
+    val sbiTarget: Double?,
+    val taraGoal: Double?,
+    val agentTarget: Double?,
+    val progress: Double?,
+    val pace: String?
+)
+
+/** TARA's figures for one CSP, as TARA sends them. [available] false: TARA gave nothing right now. */
+data class TaraPanel(
+    val available: Boolean,
+    val asOf: String?,
+    val month: String?,
+    val slab: TaraSlab?,
+    val products: List<TaraProduct>,
+    val transactionsCount: Double?,
+    val transactionsValueInr: Double?,
+    val lastDayWithData: String?,
+    val earningsMonth: String?,
+    val earnedInr: Double?,
+    val usualInr: Double?,
+    val growthPct: Double?,
+    val earningsStatus: String?,
+    val rankInDistrict: Double?,
+    val ofInDistrict: Double?,
+    val lastLoginDate: String?,
+    val daysWithoutActivity: Double?,
+    val terminalStatus: String?,
+    val matmStatus: String?,
+    val passbookPrinterStatus: String?,
+    val gpsDongleStatus: String?,
+    val caveats: List<String>
+)
+
 /** Everything the RM should know before dialling a CSP. */
 data class PreCall(
     val cspId: String,
@@ -61,6 +124,9 @@ data class PreCall(
     /** AI suggestions awaiting the RM's accept / dismiss - not obligations yet. */
     val suggested: List<Commitment>,
     val slabStatus: List<String>,
+    val score: CspScore?,
+    /** null when TARA is not switched on for this CRM. */
+    val tara: TaraPanel?,
     val performance: PerformanceReview?,
     val memory: List<String>,
     val talkingPoints: List<Suggestion>,

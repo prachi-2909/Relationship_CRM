@@ -12,8 +12,8 @@ Three numbers come out, because an RM acts differently on each:
 - overall: all five signals together.
 A CSP with a warm relationship and weak business needs help; one with both cold and weak needs a call first.
 
-The two TARA signals stay empty (and are left out of the average, with `tara_included: false`) until TARA's figures
-are passed in and mapped, so the score is never built on a guess.
+The two TARA signals are left out of the average (and `tara_included` is false) whenever TARA's figures are not
+passed in, so the score is never built on a guess.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from ..models.call_intelligence import CallSession, CallSessionStatus
 from ..models.commitment import Commitment, CommitmentStatus
 from ..models.csp import Csp
 from ..models.interaction import Direction
+from . import tara_panel
 from .scoring import band
 
 WEIGHTS_VERSION = "csp-v1-2026-10"
@@ -116,14 +117,14 @@ def _followthrough(db: Session, csp: Csp, now: datetime) -> tuple[float | None, 
     return round(value, 1), "Commitments: " + ", ".join(parts) + "."
 
 
-def _tara_performance(tara: list[dict] | None) -> tuple[float | None, str]:
-    """Products against target and the slab, from TARA. Not mapped yet: returns None so it is left out."""
-    return None, ""
+def _tara_performance(tara: dict | None, today: date) -> tuple[float | None, str]:
+    """The four core schemes against TARA's goals, allowing for how much of the month has gone."""
+    return tara_panel.performance_signal(tara, today)
 
 
-def _tara_trend(tara: list[dict] | None) -> tuple[float | None, str]:
-    """Earnings / transactions against the earlier months, from TARA. Not mapped yet: returns None."""
-    return None, ""
+def _tara_trend(tara: dict | None) -> tuple[float | None, str]:
+    """Earnings and transactions against the CSP's own usual, from TARA's growth figures."""
+    return tara_panel.trend_signal(tara)
 
 
 def _weighted(values: dict[str, float | None], names: tuple[str, ...]) -> float | None:
@@ -134,13 +135,14 @@ def _weighted(values: dict[str, float | None], names: tuple[str, ...]) -> float 
     return round(sum(v * w for v, w in pairs) / total, 1)
 
 
-def score_csp(db: Session, csp: Csp, *, now: datetime | None = None, tara: list[dict] | None = None) -> dict:
+def score_csp(db: Session, csp: Csp, *, now: datetime | None = None, tara: dict | None = None) -> dict:
+    """`tara` is TARA's `csp_performance` data for this CSP (None when TARA is off or gave nothing)."""
     now = now or datetime.now(timezone.utc)
     computed = {
         "recency": _recency(db, csp, now),
         "answered": _answered(db, csp, now),
         "followthrough": _followthrough(db, csp, now),
-        "tara_performance": _tara_performance(tara),
+        "tara_performance": _tara_performance(tara, now.date()),
         "tara_trend": _tara_trend(tara),
     }
     values = {name: computed[name][0] for name in WEIGHTS}

@@ -13,6 +13,7 @@ import {
   type IntelligenceScope,
 } from "../components/IntelligenceParts";
 import { CakeIcon, MailIcon, PhoneIcon } from "../components/sectionUi";
+import { CspScoreCard, TaraPanelCard } from "../components/TaraPanel";
 import { Card, Spinner } from "../components/ui";
 import { useAuth } from "../auth/AuthProvider";
 import { api, ApiError, API_BASE } from "../lib/api";
@@ -124,6 +125,8 @@ export function CspProfilePage() {
       </Card>
 
       {/* Pre-Call Intelligence ---------------------------------------------- */}
+      {preCall.data && <CspScoreCard score={preCall.data.score} />}
+      {preCall.data?.tara && <TaraPanelCard panel={preCall.data.tara} />}
       {preCall.data && <PreCallCard data={preCall.data} cspId={id!} />}
 
       {/* Calls --------------------------------------------------------------- */}

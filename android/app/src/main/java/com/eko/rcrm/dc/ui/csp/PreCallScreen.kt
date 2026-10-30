@@ -126,6 +126,9 @@ private fun PreCallContent(
 
         actionError?.let { message -> item { ErrorBanner(message = message) } }
 
+        data.score?.let { item { ScoreCard(it) } }
+        data.tara?.let { item { TaraCard(it) } }
+
         if (data.isEmpty) {
             item {
                 Text(

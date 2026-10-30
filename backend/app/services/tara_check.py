@@ -19,7 +19,10 @@ import json
 import logging
 import re
 
-from . import kiosk_kai, llm
+from ..config import get_settings
+from . import kiosk_kai, llm, tara_panel
+
+settings = get_settings()
 
 logger = logging.getLogger("tara_check")
 
@@ -35,8 +38,28 @@ ALLOWED: dict[str, set[str]] = {
 BASE_TOOLS = ("tara.csp_performance", "tara.csp_profile")   # always fetched for a CSP
 MAX_EXTRA_CALLS = 1                                          # beyond the base two, so at most 3 per CSP
 MAX_DAYS = 90
-MAX_CHARS = 6000                                             # per answer, so one tool cannot flood the prompt
+MAX_CHARS = 12000                                            # per answer, so one tool cannot flood the prompt
+PANEL_TIMEOUT = 10.0                                         # seconds: a briefing page must stay quick
 _PERIOD = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def compact(data):
+    """What the model and the panel do not need is dropped BEFORE the size limit, so the limit never cuts off the
+    figures that matter (products, slab) behind a long list: the per-day table keeps its last 7 days, and the
+    citations, masked identity and unread-table notes go."""
+    if not isinstance(data, dict):
+        return data
+    data = dict(data)
+    for key in ("citations", "identity", "sbi_unread_tables"):
+        data.pop(key, None)
+    tx = data.get("transactions")
+    if isinstance(tx, dict):
+        tx = dict(tx)
+        by_day = tx.pop("by_day", None)
+        if isinstance(by_day, list) and by_day:
+            tx["last_7_days"] = by_day[-7:]
+        data["transactions"] = tx
+    return data
 
 
 def _shrink(data) -> object:
@@ -57,7 +80,7 @@ def _fetch(tool: str, csp_code: str, extra: dict | None = None) -> dict | None:
         "as_of": body.get("as_of"),
         "source": body.get("source"),
         "caveats": body.get("caveats"),
-        "data": _shrink(body.get("data")),
+        "data": _shrink(compact(body.get("data"))),
     }
 
 
@@ -134,9 +157,19 @@ def as_prompt_block(facts: list[dict]) -> str:
 
 def base_facts(csp_code: str) -> list[dict]:
     """TARA's performance and profile for the CSP, as a list of {tool, as_of, source, caveats, data}. [] when off."""
-    if not kiosk_kai.configured():
-        return []
+    if not kiosk_kai.configured() or not settings.ai_data_processing_enabled:
+        return []                      # the AI master switch also keeps TARA's figures away from the model
     return [r for r in (_fetch(t, csp_code) for t in BASE_TOOLS) if r]
+
+
+def panel(csp_code: str) -> tuple[dict | None, dict | None]:
+    """(the panel an RM reads, TARA's performance figures for the score). (None, None) when TARA is not switched on,
+    so the page simply has no TARA part; a panel of {"available": False} when it is on but gave nothing."""
+    if not kiosk_kai.configured():
+        return None, None
+    perf = kiosk_kai.call("tara.csp_performance", _timeout=PANEL_TIMEOUT, csp_code=csp_code)
+    prof = kiosk_kai.call("tara.csp_profile", _timeout=PANEL_TIMEOUT, csp_code=csp_code)
+    return tara_panel.build_panel(perf, prof), ((perf or {}).get("data") if perf else None)
 
 
 def gather(question: str, csp_code: str) -> list[dict]:

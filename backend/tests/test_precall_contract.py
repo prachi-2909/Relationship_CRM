@@ -50,6 +50,32 @@ def test_precall_response_has_every_field_the_android_dto_reads(client, db, make
     assert body["memory"] and set(body["memory"][0]) >= {"fact", "kind"}
     prop = body["proposed_commitments"][0]
     assert set(prop) >= {"id", "text", "party", "due_date", "status"} and prop["status"] == "proposed"
+    # The score and the TARA panel Android's PreCallDto also reads (TARA is off in this test, so no panel).
+    assert set(body["score"]) >= {"version", "overall", "relationship", "business", "band", "tara_included", "reasons"}
+    assert "tara" in body and body["tara"] is None
+
+
+def test_the_tara_panel_has_every_field_the_android_dto_reads(client, db, make_user, login, monkeypatch):
+    from app.services import kiosk_kai
+    from tests.test_tara_panel import WEAK, WEAK_PROFILE
+
+    rm = make_user(email="rm-contract-tara@example.com", role=Role.RELATIONSHIP_MANAGER)
+    csp = _csp(db, "K3", rm)
+    monkeypatch.setattr(kiosk_kai, "configured", lambda: True)
+    monkeypatch.setattr(kiosk_kai, "call", lambda tool, **a: WEAK if tool == "tara.csp_performance" else WEAK_PROFILE)
+    login("rm-contract-tara@example.com", "password123")
+
+    tara = client.get(f"/api/v1/csps/{csp.id}/pre-call").json()["tara"]
+
+    assert set(tara) >= {"available", "as_of", "month", "slab", "products", "transactions", "earnings", "activity", "caveats"}
+    assert set(tara["slab"]) >= {"reached", "reached_in_calling_sheet", "target_in_calling_sheet", "basis", "next"}
+    assert set(tara["slab"]["next"]) >= {"name", "incentive_inr", "schemes", "closest_three", "extra_total"}
+    assert set(tara["slab"]["next"]["schemes"][0]) >= {"scheme", "have", "threshold", "more"}
+    assert set(tara["products"][0]) >= {"code", "name", "achieved", "sbi_target", "tara_goal", "agent_target", "progress", "pace_status"}
+    assert set(tara["transactions"]) >= {"count", "gtv_inr", "days_with_data", "last_day_with_data"}
+    assert set(tara["earnings"]) >= {"month", "value_inr", "usual_inr", "growth_pct", "status", "rank_in_district", "of_in_district"}
+    assert set(tara["activity"]) >= {"days_without_activity", "last_login_date", "terminal_status", "matm_status",
+                                     "passbook_printer_status", "gps_dongle_status"}
 
 
 def test_status_endpoint_returns_the_commitment_shape_android_expects(client, db, make_user, login):

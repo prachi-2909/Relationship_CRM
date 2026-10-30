@@ -76,6 +76,100 @@ data class MemoryFactDto(
     val kind: String = ""
 )
 
+/** The CSP relationship score: relationship, business (from TARA) and overall, with the reasons in words. */
+@Serializable
+data class CspScoreDto(
+    val version: String = "",
+    val overall: Int? = null,
+    val relationship: Int? = null,
+    val business: Int? = null,
+    val band: String? = null,
+    val tara_included: Boolean = false,
+    val reasons: List<String> = emptyList()
+)
+
+@Serializable
+data class TaraSlabSchemeDto(
+    val scheme: String = "",
+    val have: Double? = null,
+    val threshold: Double? = null,
+    val more: Double? = null
+)
+
+@Serializable
+data class TaraSlabNextDto(
+    val name: String? = null,
+    val incentive_inr: Double? = null,
+    val schemes: List<TaraSlabSchemeDto> = emptyList(),
+    val closest_three: List<String> = emptyList(),
+    val extra_total: Double? = null
+)
+
+@Serializable
+data class TaraSlabDto(
+    val rule: String? = null,
+    val reached: String? = null,
+    val reached_in_calling_sheet: String? = null,
+    val target_in_calling_sheet: String? = null,
+    val basis: String = "",
+    val next: TaraSlabNextDto? = null
+)
+
+@Serializable
+data class TaraProductDto(
+    val code: String = "",
+    val name: String = "",
+    val achieved: Double? = null,
+    val sbi_target: Double? = null,
+    val tara_goal: Double? = null,
+    val agent_target: Double? = null,
+    val progress: Double? = null,
+    val pace_status: String? = null
+)
+
+@Serializable
+data class TaraTransactionsDto(
+    val count: Double? = null,
+    val gtv_inr: Double? = null,
+    val days_with_data: Double? = null,
+    val last_day_with_data: String? = null
+)
+
+@Serializable
+data class TaraEarningsDto(
+    val month: String? = null,
+    val value_inr: Double? = null,
+    val usual_inr: Double? = null,
+    val growth_pct: Double? = null,
+    val status: String? = null,
+    val rank_in_district: Double? = null,
+    val of_in_district: Double? = null
+)
+
+@Serializable
+data class TaraActivityDto(
+    val days_without_activity: Double? = null,
+    val last_login_date: String? = null,
+    val terminal_status: String? = null,
+    val matm_status: String? = null,
+    val passbook_printer_status: String? = null,
+    val gps_dongle_status: String? = null
+)
+
+/** TARA's figures for one CSP, copied as TARA sends them. available=false means TARA gave nothing. */
+@Serializable
+data class TaraPanelDto(
+    val available: Boolean = false,
+    val as_of: String? = null,
+    val month: String? = null,
+    val slab: TaraSlabDto? = null,
+    val products: List<TaraProductDto> = emptyList(),
+    val transactions: TaraTransactionsDto? = null,
+    val earnings: TaraEarningsDto? = null,
+    val activity: TaraActivityDto? = null,
+    val caveats: List<String> = emptyList()
+)
+
 /** The same pre-call briefing the web CRM shows - one backend source of truth. */
 @Serializable
 data class PreCallDto(
@@ -91,6 +185,8 @@ data class PreCallDto(
     val open_commitments: OpenCommitmentsDto = OpenCommitmentsDto(),
     val proposed_commitments: List<CommitmentDto> = emptyList(),
     val slab_status: List<String> = emptyList(),
+    val score: CspScoreDto? = null,
+    val tara: TaraPanelDto? = null,
     val performance: PerformanceDto? = null,
     val memory: List<MemoryFactDto> = emptyList(),
     val talking_point_items: List<SuggestionItemDto> = emptyList(),
